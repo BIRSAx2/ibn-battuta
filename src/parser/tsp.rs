@@ -10,6 +10,7 @@ use std::{
 use getset::{CopyGetters, Getters, MutGetters};
 
 use crate::parser::tsp_error::ParseTspError;
+use crate::utils::point::Point;
 
 // (Some) keywords for data specification part.
 static K_NAME: &str = "NAME";
@@ -233,7 +234,7 @@ impl Tsp {
             },
             _ => {
                 if let (Some(na), Some(nb)) = (self.node_coords.get(&a), self.node_coords.get(&b)) {
-                    self.weight_kind.cost(na.pos(), nb.pos())
+                    self.weight_kind.cost(na.coordinates(), nb.coordinates())
                 } else {
                     0.
                 }
@@ -454,7 +455,7 @@ impl TspBuilder {
                     .split_whitespace()
                     .collect::<Vec<&str>>(),
             );
-            dta.insert(pt.id, pt);
+            dta.insert(pt.id(), pt);
             count += 1;
         }
 
@@ -847,42 +848,6 @@ impl TspBuilder {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 struct InputWrapper<T>(T);
-
-/// Represents a node coordinate.
-#[derive(Clone, Debug)]
-pub struct Point {
-    /// Id of a point.
-    id: usize,
-    /// Point's coordinates.
-    pos: Vec<f64>,
-}
-
-impl Point {
-    pub fn id(&self) -> usize {
-        self.id
-    }
-
-    pub fn pos(&self) -> &Vec<f64> {
-        &self.pos
-    }
-
-    pub fn into_value(self) -> (usize, Vec<f64>) {
-        (self.id, self.pos)
-    }
-
-    /// Constructs a new point.
-    pub fn new(id: usize, pos: Vec<f64>) -> Self {
-        Self { id, pos }
-    }
-
-    pub fn new2(id: usize, x: f64, y: f64) -> Self {
-        Self::new(id, vec![x, y])
-    }
-
-    pub fn new3(id: usize, x: f64, y: f64, z: f64) -> Self {
-        Self::new(id, vec![x, y, z])
-    }
-}
 
 /// Enum for TSP's variants.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
