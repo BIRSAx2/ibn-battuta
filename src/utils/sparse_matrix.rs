@@ -1,8 +1,10 @@
 use std::collections::HashMap;
 
+use getset::Getters;
+
 use crate::parser::Tsp;
 
-#[derive(Debug)]
+#[derive(Debug, Getters)]
 pub struct SparseMatrix {
     n: usize,
     m: usize,

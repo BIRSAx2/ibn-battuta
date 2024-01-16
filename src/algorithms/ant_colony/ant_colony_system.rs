@@ -5,6 +5,7 @@ use rand::Rng;
 
 use crate::{parser, Point};
 use crate::parser::Tsp;
+use crate::utils::sparse_matrix::SparseMatrix;
 
 #[derive(Debug, Clone, MutGetters, Setters, Getters)]
 struct Ant {
@@ -20,7 +21,8 @@ struct Ant {
 struct AntColonySystem {
     ants: Vec<Ant>,
     pheromone_matrix: Vec<Vec<f64>>,
-    distance_matrix: Vec<Vec<f64>>,
+    distance_matrix: SparseMatrix,
+
     alpha: f64,
     rho: f64,
     beta: f64,
@@ -46,7 +48,7 @@ impl AntColonySystem {
     fn new(tsp: Tsp, num_ants: usize, alpha: f64, beta: f64, rho: f64, tau0: f64, q0: f64) -> Self {
         // initialize pheromone matrix
         let pheromone_matrix = vec![vec![tau0; tsp.dim()]; tsp.dim()];
-        let distance_matrix = build_distance_matrix(&tsp);
+        let distance_matrix = SparseMatrix::from_tsp(&tsp);
 
         let mut ants = Vec::with_capacity(num_ants);
 
@@ -54,7 +56,7 @@ impl AntColonySystem {
             ants.push(Ant {
                 first_node: 0,
                 current_node: 0,
-                unvisited_nodes: (0..tsp.dim()).collect(),
+                unvisited_nodes: (1..tsp.dim()).collect(),
                 current_tour: Vec::with_capacity(tsp.dim()),
                 tour_length: 0.0,
             })
@@ -77,10 +79,10 @@ impl AntColonySystem {
     fn initialize_ants(&mut self) {
         let mut rng = rand::thread_rng();
         for ant in self.ants.iter_mut() {
-            let start_node = rng.gen_range(0..self.distance_matrix.len());
+            let start_node = rng.gen_range(1..self.tsp.dim());
             ant.current_node = start_node;
             ant.first_node = start_node;
-            ant.unvisited_nodes = (0..self.distance_matrix.len()).collect();
+            ant.unvisited_nodes = (1..self.tsp.dim()).collect();
             ant.unvisited_nodes.remove(&start_node);
             ant.current_tour.clear();
             ant.current_tour.push(start_node);
@@ -93,8 +95,7 @@ impl AntColonySystem {
         let q = rand::thread_rng().gen_range(0.0..1.0);
 
         let distance = |current_node, next_node| -> f64 {
-            let dm: &Vec<f64> = self.distance_matrix.get(current_node).unwrap();
-            *dm.get(next_node).unwrap()
+            *self.distance_matrix.get(current_node, next_node).unwrap()
         };
 
 
@@ -144,9 +145,9 @@ impl AntColonySystem {
             self.initialize_ants();
             // tour phase building
 
-            for i in 0..self.distance_matrix.len() {
+            for i in 1..self.tsp.dim() {
                 let mut next_nodes: Vec<usize> = vec![0; self.ants.len()];
-                if i < self.distance_matrix.len() - 1 {
+                if i < self.tsp.dim() - 1 {
                     for k in 0..self.ants.len() {
                         next_nodes[k] = self.pseudo_random_proportional_rule(&self.ants[k]);
                         self.ants[k].unvisited_nodes.remove(&next_nodes[k]);
@@ -175,7 +176,7 @@ impl AntColonySystem {
                 for i in 0..self.ants[k].current_tour.len() - 1 {
                     let a = current_best_tour[i];
                     let b = current_best_tour[i + 1];
-                    dist += self.distance_matrix[a][b];
+                    dist += self.distance_matrix.get(a, b).unwrap();
                 }
                 if dist < current_best {
                     current_best_tour = self.ants[k].current_tour.clone();
@@ -224,8 +225,8 @@ mod tests {
         let solution = nearest_neighbor::solve(&node_coords, &options);
         println!("NN sol: {}", solution.total);
         let length_nn = solution.total;
-        // let mut acs = AntColonySystem::new(tsp, 30, 9.0, 12.0, 0.15, 0.0001, 0.2);
-        let mut acs = AntColonySystem::new(tsp, 10, 0.1, 2.0, 0.1, 1.0 / (node_coords.len() as f64 * length_nn), 0.9);
+        let mut acs = AntColonySystem::new(tsp, 30, 9.0, 12.0, 0.15, 0.0001, 0.2);
+        // let mut acs = AntColonySystem::new(tsp, 10, 0.1, 2.0, 0.1, 1.0 / (node_coords.len() as f64 * length_nn), 0.9);
 
         let (best, tour) = acs.solve(100);
 
