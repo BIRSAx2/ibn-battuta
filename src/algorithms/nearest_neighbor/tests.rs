@@ -85,7 +85,7 @@ mod tests {
         let pt = Point::new_with_coords(&[-1.0, -1.0]);
         let other = Point::new_with_coords(&[1.0, 1.0]);
 
-        assert_relative_eq!(2.828427, pt.distance(&other))
+        assert_relative_eq!(2.8284271247461, pt.distance(&other))
     }
 
     #[test]

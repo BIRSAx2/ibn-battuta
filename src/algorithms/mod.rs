@@ -4,7 +4,7 @@ use std::str::FromStr;
 use crate::Point;
 
 pub mod nearest_neighbor;
-
+pub mod ant_colony;
 
 /// Represents different algorithms for solving the Traveling Salesman Problem (TSP).
 #[derive(Clone, Debug, PartialEq)]

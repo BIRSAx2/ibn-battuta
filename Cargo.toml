@@ -8,3 +8,5 @@ edition = "2021"
 [dependencies]
 getset = "0.1.2"
 approx = "0.5.1"
+rand = "0.8.5"
+log = "0.4.20"
