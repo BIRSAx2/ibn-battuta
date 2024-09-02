@@ -1,34 +1,36 @@
 use tspf::Tsp;
 
-use crate::algorithms::{SolverOptions, TspSolver, Solution};
+use crate::algorithms::utils::{HeuristicAlgorithmConfig, SolverConfig};
+use crate::algorithms::{Solution, TspSolver};
+
 
 pub struct ThreeOpt<'a> {
     tsp: &'a Tsp,
     tour: Vec<usize>,
     cost: f64,
-    options: SolverOptions,
+    verbose: bool,
 }
 
 impl ThreeOpt<'_> {
-    pub fn new(tsp: &Tsp, options: SolverOptions) -> ThreeOpt {
+    pub fn new(tsp: &Tsp) -> ThreeOpt {
         ThreeOpt {
             tsp,
             tour: vec![],
             cost: 0.0,
-            options,
+            verbose: false,
         }
     }
 
-    fn calculate_tour_cost(&self) -> f64 {
-        let mut cost = 0.0;
-        let len = self.tour.len();
-        for i in 0..len {
-            let from = self.tour[i];
-            let to = self.tour[(i + 1) % len];
-            cost += self.tsp.weight(from, to) as f64;
-        }
-        cost
-    }
+    // fn calculate_tour_cost(&self) -> f64 {
+    //     let mut cost = 0.0;
+    //     let len = self.tour.len();
+    //     for i in 0..len {
+    //         let from = self.tour[i];
+    //         let to = self.tour[(i + 1) % len];
+    //         cost += self.tsp.weight(from, to) as f64;
+    //     }
+    //     cost
+    // }
 
     pub fn optimize(&mut self) {
         let n = self.tour.len();
@@ -51,7 +53,7 @@ impl ThreeOpt<'_> {
                                 self.cost = new_cost;
                                 improved = true;
 
-                                if self.options.verbose {
+                                if self.verbose {
                                     println!(
                                         "3OPT: Improved tour at segments ({}, {}, {}), new cost: {}",
                                         i, j, k, self.cost
@@ -67,7 +69,7 @@ impl ThreeOpt<'_> {
 
     fn generate_new_tours(&self, i: usize, j: usize, k: usize) -> Vec<Vec<usize>> {
         let mut new_tours = Vec::new();
-        let n = self.tour.len();
+        let _n = self.tour.len();
 
         let mut tour1 = self.tour.clone();
         let mut tour2 = self.tour.clone();
@@ -129,13 +131,20 @@ impl ThreeOpt<'_> {
 }
 
 impl TspSolver for ThreeOpt<'_> {
-    fn solve(&mut self, options: &SolverOptions) -> Solution {
-        let mut base_solver = options.base_solver.create(&self.tsp);
+    fn solve(&mut self, options: &SolverConfig) -> Solution {
+        let (base_solver, verbose) = match options {
+            SolverConfig::HeuristicAlgorithm(HeuristicAlgorithmConfig::LocalSearch { base_solver, verbose, .. }) => (base_solver, verbose),
+            _ => panic!("Invalid solver configuration"),
+        };
+
+        self.verbose = *verbose;
+
+        let mut base_solver = base_solver.create(&self.tsp, options);
         let base_solution = base_solver.solve(options);
         self.tour = base_solution.tour.clone();
         self.cost = base_solution.total;
 
-        if options.verbose {
+        if *verbose {
             println!("Initial tour: {:?}", self.tour);
             println!("Initial cost: {}", self.cost);
         }
@@ -158,9 +167,10 @@ impl TspSolver for ThreeOpt<'_> {
 
 #[cfg(test)]
 mod tests {
-    use tspf::TspBuilder;
-    use crate::algorithms::{SolverOptions, TspSolver};
     use super::*;
+    use crate::algorithms::utils::Solver;
+    use crate::algorithms::{SolverConfig, TspSolver};
+    use tspf::TspBuilder;
 
     #[test]
     fn test_three_opt() {
@@ -181,10 +191,9 @@ mod tests {
         ";
         let tsp = TspBuilder::parse_str(data).unwrap();
 
-        let mut options = SolverOptions::default();
-        options.verbose = true;
-        let mut solver = ThreeOpt::new(&tsp, options);
-        let solution = solver.solve(&SolverOptions::default());
+        let  options = SolverConfig::new_local_search(Solver::NearestNeighbor, true, 1000);
+        let mut solver = ThreeOpt::new(&tsp);
+        let solution = solver.solve(&options);
 
         println!("{:?}", solution);
     }
@@ -195,9 +204,9 @@ mod tests {
         let tsp = TspBuilder::parse_path(path).unwrap();
 
         let size = tsp.dim();
-        let options = SolverOptions::default();
-        let mut solver = ThreeOpt::new(&tsp, options);
-        let solution = solver.solve(&SolverOptions::default());
+        let options = SolverConfig::default();
+        let mut solver = ThreeOpt::new(&tsp);
+        let solution = solver.solve(&options);
         println!("{:?}", solution);
         assert_eq!(solution.tour.len(), size);
     }

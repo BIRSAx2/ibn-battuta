@@ -1,6 +1,7 @@
+use crate::algorithms::utils::SolverConfig;
+use crate::algorithms::{Solution, TspSolver};
 use std::f64;
 use tspf::Tsp;
-use crate::algorithms::{Solution, SolverOptions, TspSolver};
 
 pub struct BellmanHeldKarp {
     tsp: Tsp,
@@ -89,7 +90,7 @@ impl BellmanHeldKarp {
 }
 
 impl TspSolver for BellmanHeldKarp {
-    fn solve(&mut self, _options: & SolverOptions) -> Solution {
+    fn solve(&mut self, _options: &SolverConfig) -> Solution {
         self.bellman_held_karp();
         Solution::new(self.best_tour.iter().map(|&i| i as usize).collect(), self.best_cost)
     }
@@ -104,9 +105,10 @@ impl TspSolver for BellmanHeldKarp {
 
 #[cfg(test)]
 mod tests {
-    use tspf::TspBuilder;
-    use crate::algorithms::{SolverOptions, TspSolver};
     use crate::algorithms::exact::bellman_held_karp::BellmanHeldKarp;
+    use crate::algorithms::utils::{Solver, SolverConfig};
+    use crate::algorithms::TspSolver;
+    use tspf::TspBuilder;
 
     #[test]
     fn test() {
@@ -129,7 +131,7 @@ mod tests {
         let tsp = TspBuilder::parse_str(data).unwrap();
 
         let mut solver = BellmanHeldKarp::new(tsp);
-        let options = SolverOptions::default();
+        let options = SolverConfig::new_local_search(Solver::NearestNeighbor, false, 1000);
 
         let solution = solver.solve(&options);
 

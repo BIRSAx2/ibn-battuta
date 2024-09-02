@@ -1,9 +1,8 @@
-use std::f64;
-use tspf::{Tsp};
-use crate::algorithms::{Solution, SolverOptions, TspSolver};
+use crate::algorithms::utils::MetaheuristicAlgorithmConfig;
+use crate::algorithms::{Solution, SolverConfig, TspSolver};
 use rand::prelude::*;
-use crate::algorithms::heuristic::nearest_neighbor::NearestNeighbor;
-use crate::algorithms::metaheuristic::ant_colony::ant_colony_system::AntColonySystem;
+use std::f64;
+use tspf::Tsp;
 
 pub struct RedBlackACS<'a> {
     tsp: &'a Tsp,
@@ -11,15 +10,23 @@ pub struct RedBlackACS<'a> {
     heuristic: Vec<Vec<f64>>,
     best_tour: Vec<usize>,
     best_cost: f64,
-    options: SolverOptions,
+    alpha: f64,
+    beta: f64,
+    rho: f64,
+    tau0: f64,
+    q0: f64,
+    num_ants: usize,
+    num_red_ants: usize,
+    num_black_ants: usize,
+    evaporation_rate: f64,
+    max_iterations: usize,
+    elitism: f64,
 }
 
 impl<'a> RedBlackACS<'a> {
-    pub fn new(tsp: &'a Tsp, options: SolverOptions) -> RedBlackACS<'a> {
+    pub fn new(tsp: &'a Tsp) -> RedBlackACS<'a> {
         let dim = tsp.dim();
-        let mut nn = NearestNeighbor::new(&tsp);
-        let nn_cost = nn.solve(&SolverOptions::default()).total;
-        let initial_pheromone = 1.0 / (dim as f64 * nn_cost);
+        let initial_pheromone = 1.0 / (dim as f64 * dim as f64);
         let pheromones = vec![vec![initial_pheromone; dim]; dim];
         let heuristic = vec![vec![0.0; dim]; dim];
 
@@ -29,7 +36,20 @@ impl<'a> RedBlackACS<'a> {
             heuristic,
             best_tour: vec![],
             best_cost: f64::INFINITY,
-            options,
+
+            // params
+
+            alpha: 1.0,
+            beta: 2.0,
+            rho: 0.1,
+            tau0: 1.0,
+            q0: 0.9,
+            num_ants: 10,
+            num_red_ants: 5,
+            num_black_ants: 5,
+            evaporation_rate: 0.1,
+            max_iterations: 100,
+            elitism: 0.1,
         };
 
         rb_acs.initialize_heuristic();
@@ -74,7 +94,7 @@ impl<'a> RedBlackACS<'a> {
             self.select_best_city(current_city, visited)
         } else {
             // Black ants use the ACS rule (balancing exploitation and exploration)
-            if rng.gen::<f64>() < self.options.q0 {
+            if rng.gen::<f64>() < self.q0 {
                 self.select_best_city(current_city, visited)
             } else {
                 self.select_probabilistic_city(current_city, visited, rng)
@@ -86,8 +106,8 @@ impl<'a> RedBlackACS<'a> {
         (0..self.tsp.dim())
             .filter(|&city| !visited[city])
             .max_by(|&a, &b| {
-                let score_a = self.pheromones[current_city][a] * self.heuristic[current_city][a].powf(self.options.beta);
-                let score_b = self.pheromones[current_city][b] * self.heuristic[current_city][b].powf(self.options.beta);
+                let score_a = self.pheromones[current_city][a] * self.heuristic[current_city][a].powf(self.beta);
+                let score_b = self.pheromones[current_city][b] * self.heuristic[current_city][b].powf(self.beta);
                 score_a.partial_cmp(&score_b).unwrap()
             })
             .unwrap()
@@ -99,7 +119,7 @@ impl<'a> RedBlackACS<'a> {
 
         for (city, &visited) in visited.iter().enumerate() {
             if !visited {
-                let probability = self.pheromones[current_city][city] * self.heuristic[current_city][city].powf(self.options.beta);
+                let probability = self.pheromones[current_city][city] * self.heuristic[current_city][city].powf(self.beta);
                 probabilities[city] = probability;
                 total += probability;
             }
@@ -121,7 +141,7 @@ impl<'a> RedBlackACS<'a> {
 
     fn local_pheromone_update(&mut self, edge: &[usize]) {
         let (i, j) = (edge[0], edge[1]);
-        self.pheromones[i][j] = (1.0 - self.options.rho) * self.pheromones[i][j] + self.options.rho * self.options.tau0;
+        self.pheromones[i][j] = (1.0 - self.rho) * self.pheromones[i][j] + self.rho * self.tau0;
         self.pheromones[j][i] = self.pheromones[i][j];
     }
 
@@ -132,7 +152,7 @@ impl<'a> RedBlackACS<'a> {
             let from = self.best_tour[i];
             let to = self.best_tour[(i + 1) % self.best_tour.len()];
 
-            self.pheromones[from][to] = (1.0 - self.options.alpha) * self.pheromones[from][to] + self.options.alpha * deposit;
+            self.pheromones[from][to] = (1.0 - self.alpha) * self.pheromones[from][to] + self.alpha * deposit;
             self.pheromones[to][from] = self.pheromones[from][to];
         }
     }
@@ -147,12 +167,22 @@ impl<'a> RedBlackACS<'a> {
 }
 
 impl TspSolver for RedBlackACS<'_> {
-    fn solve(&mut self, options: &SolverOptions) -> Solution {
-        self.options = options.clone();
-
-        for _ in 0..self.options.max_iterations {
-            for ant in 0..self.options.num_ants {
-                let is_red = ant < self.options.num_red_ants;
+    fn solve(&mut self, options: &SolverConfig) -> Solution {
+        (self.alpha, self.beta, self.rho,
+         self.tau0, self.q0, self.num_ants,
+         self.num_red_ants, self.num_black_ants, self.evaporation_rate,
+         self.max_iterations, self.elitism) = match options {
+            SolverConfig::MetaheuristicAlgorithm(MetaheuristicAlgorithmConfig::RedBlackAntColonySystem {
+                                                     alpha, beta, rho,
+                                                     tau0, q0, num_ants,
+                                                     num_red_ants, num_black_ants, evaporation_rate,
+                                                     max_iterations, elitism,
+                                                 }) => (*alpha, *beta, *rho, *tau0, *q0, *num_ants, *num_red_ants, *num_black_ants, *evaporation_rate, *max_iterations, *elitism),
+            _ => panic!("Invalid algorithm configuration"),
+        };
+        for _ in 0..self.max_iterations {
+            for ant in 0..self.num_ants {
+                let is_red = ant < self.num_red_ants;
                 let solution = self.construct_solution(is_red);
                 self.update_best_solution(&solution);
             }
@@ -177,10 +207,9 @@ impl TspSolver for RedBlackACS<'_> {
 
 #[cfg(test)]
 mod tests {
-    use tspf::TspBuilder;
-    use crate::algorithms::{SolverOptions, TspSolver};
-    use crate::algorithms::heuristic::local_search::two_opt::TwoOpt;
     use super::*;
+    use crate::algorithms::{SolverConfig, TspSolver};
+    use tspf::TspBuilder;
 
 
     #[test]
@@ -202,10 +231,9 @@ mod tests {
         ";
         let tsp = TspBuilder::parse_str(data).unwrap();
 
-        let mut options = SolverOptions::default();
-        options.verbose = true;
-        let mut solver = RedBlackACS::new(&tsp, options);
-        let solution = solver.solve(&SolverOptions::default());
+        let options = SolverConfig::new_red_black_ant_colony_system(1.0, 2.0, 0.1, 1.0, 0.9, 10, 5, 5, 0.1, 100, 0.1);
+        let mut solver = RedBlackACS::new(&tsp);
+        let solution = solver.solve(&options);
 
         println!("{:?}", solution);
     }
@@ -218,9 +246,9 @@ mod tests {
         let tsp = TspBuilder::parse_path(path).unwrap();
 
         let size = tsp.dim();
-        let options = SolverOptions::default();
-        let mut solver = RedBlackACS::new(&tsp, options);
-        let solution = solver.solve(&SolverOptions::default());
+        let options = SolverConfig::new_red_black_ant_colony_system(1.0, 2.0, 0.1, 1.0, 0.9, 10, 5, 5, 0.1, 100, 0.1);
+        let mut solver = RedBlackACS::new(&tsp);
+        let solution = solver.solve(&options);
         println!("{:?}", solution);
         assert_eq!(solution.tour.len(), size);
     }

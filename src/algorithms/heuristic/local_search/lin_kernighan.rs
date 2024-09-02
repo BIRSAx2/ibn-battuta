@@ -1,23 +1,27 @@
+use crate::algorithms::utils::{HeuristicAlgorithmConfig, SolverConfig};
+use crate::algorithms::{Solution, TspSolver};
 use std::f64;
-use tspf::{Tsp};
-use crate::algorithms::{Solution, SolverOptions, TspSolver};
+use tspf::Tsp;
+
 use rand::prelude::*;
 
 pub struct LinKernighan<'a> {
     tsp: &'a Tsp,
     tour: Vec<usize>,
     cost: f64,
-    options: SolverOptions,
+    verbose: bool,
+    max_iterations: usize,
 }
 
 // TODO: Add verbose output
 impl<'a> LinKernighan<'a> {
-    pub fn new(tsp: &'a Tsp, options: SolverOptions) -> LinKernighan<'a> {
+    pub fn new(tsp: &'a Tsp) -> LinKernighan<'a> {
         LinKernighan {
             tsp,
             tour: vec![],
             cost: 0.0,
-            options,
+            verbose: false,
+            max_iterations: 1000,
         }
     }
 
@@ -118,11 +122,17 @@ impl<'a> LinKernighan<'a> {
 }
 
 impl TspSolver for LinKernighan<'_> {
-    fn solve(&mut self, options: &SolverOptions) -> Solution {
+    fn solve(&mut self, options: &SolverConfig) -> Solution {
+        (self.verbose, self.max_iterations) = match options {
+            SolverConfig::HeuristicAlgorithm(heuristic) => match heuristic {
+                HeuristicAlgorithmConfig::LocalSearch { verbose, max_iterations, .. } => (*verbose, *max_iterations),
+            },
+            _ => panic!("Invalid configuration"),
+        };
         self.initial_tour();
 
         let mut iterations = 0;
-        while iterations < options.max_iterations {
+        while iterations < self.max_iterations {
             if !self.improve_tour() {
                 break;
             }
@@ -146,11 +156,10 @@ impl TspSolver for LinKernighan<'_> {
 
 #[cfg(test)]
 mod tests {
-    use tspf::TspBuilder;
-    use crate::algorithms::{SolverOptions, TspSolver};
-    use crate::algorithms::heuristic::local_search::two_opt::TwoOpt;
     use super::*;
-
+    use crate::algorithms::utils::Solver;
+    use crate::algorithms::{SolverConfig, TspSolver};
+    use tspf::TspBuilder;
 
     #[test]
     fn test_example() {
@@ -171,10 +180,9 @@ mod tests {
         ";
         let tsp = TspBuilder::parse_str(data).unwrap();
 
-        let mut options = SolverOptions::default();
-        options.verbose = true;
-        let mut solver = LinKernighan::new(&tsp, options);
-        let solution = solver.solve(&SolverOptions::default());
+        let options = SolverConfig::new_local_search(Solver::NearestNeighbor, false, 1000);
+        let mut solver = LinKernighan::new(&tsp);
+        let solution = solver.solve(&options);
 
         println!("{:?}", solution);
     }
@@ -187,9 +195,9 @@ mod tests {
         let tsp = TspBuilder::parse_path(path).unwrap();
 
         let size = tsp.dim();
-        let options = SolverOptions::default();
-        let mut solver = LinKernighan::new(&tsp, options);
-        let solution = solver.solve(&SolverOptions::default());
+        let options = SolverConfig::new_local_search(Solver::NearestNeighbor, false, 1000);
+        let mut solver = LinKernighan::new(&tsp);
+        let solution = solver.solve(&options);
         println!("{:?}", solution);
         assert_eq!(solution.tour.len(), size);
     }

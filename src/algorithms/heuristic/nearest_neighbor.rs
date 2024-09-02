@@ -1,6 +1,7 @@
+use crate::algorithms::utils::SolverConfig;
+use crate::algorithms::{Solution, TspSolver};
 use std::f64;
-use tspf::{Tsp};
-use crate::algorithms::{Solution, SolverOptions, TspSolver};
+use tspf::Tsp;
 
 
 pub struct NearestNeighbor<'a> {
@@ -24,7 +25,7 @@ impl<'a> NearestNeighbor<'a> {
 
 
 impl TspSolver for NearestNeighbor<'_> {
-    fn solve(&mut self, _options: &SolverOptions) -> Solution {
+    fn solve(&mut self, _options: &SolverConfig) -> Solution {
         let n = self.tsp.dim();
         let mut current_city = 0;
         self.visited[current_city] = true;
@@ -72,9 +73,9 @@ impl TspSolver for NearestNeighbor<'_> {
 
 #[cfg(test)]
 mod tests {
-    use tspf::TspBuilder;
-    use crate::algorithms::{SolverOptions, TspSolver};
     use super::*;
+    use crate::algorithms::TspSolver;
+    use tspf::TspBuilder;
 
     #[test]
     fn test_nearest_neighbor() {
@@ -96,7 +97,7 @@ mod tests {
         let tsp = TspBuilder::parse_str(data).unwrap();
 
         let mut solver = NearestNeighbor::new(&tsp);
-        let solution = solver.solve(&mut SolverOptions::default());
+        let solution = solver.solve(&mut SolverConfig::default());
 
         println!("{:?}", solution);
     }
@@ -111,7 +112,7 @@ mod tests {
         let size = tsp.dim();
 
         let mut solver = NearestNeighbor::new(&tsp);
-        let solution = solver.solve(&mut SolverOptions::default());
+        let solution = solver.solve(&mut SolverConfig::default());
 
         println!("{:?}", solution);
         assert_eq!(solution.tour.len(), size);

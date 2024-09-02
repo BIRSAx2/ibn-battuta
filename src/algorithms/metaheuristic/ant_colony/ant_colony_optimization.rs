@@ -1,19 +1,28 @@
-use std::f64;
-use tspf::{Tsp};
-use crate::algorithms::{Solution, SolverOptions, TspSolver};
+use crate::algorithms::utils::{MetaheuristicAlgorithmConfig, SolverConfig};
+use crate::algorithms::{Solution, TspSolver};
 use rand::prelude::*;
-use crate::algorithms::metaheuristic::simulated_annealing::SimulatedAnnealing;
+use std::f64;
+use tspf::Tsp;
 
 pub struct AntColonyOptimization<'a> {
     tsp: &'a Tsp,
     pheromones: Vec<Vec<f64>>,
     best_tour: Vec<usize>,
     best_cost: f64,
-    options: SolverOptions,
+    alpha: f64,
+    beta: f64,
+    rho: f64,
+    tau0: f64,
+    q0: f64,
+    num_ants: usize,
+    evaporation_rate: f64,
+    max_iterations: usize,
+
 }
 
 impl<'a> AntColonyOptimization<'a> {
-    pub fn new(tsp: &'a Tsp, options: SolverOptions) -> AntColonyOptimization<'a> {
+    // TODO: Add with_options
+    pub fn new(tsp: &'a Tsp) -> AntColonyOptimization<'a> {
         let dim = tsp.dim();
         let initial_pheromone = 1.0 / (dim as f64);
         let pheromones = vec![vec![initial_pheromone; dim]; dim];
@@ -23,7 +32,14 @@ impl<'a> AntColonyOptimization<'a> {
             pheromones,
             best_tour: vec![],
             best_cost: f64::INFINITY,
-            options,
+            alpha: 1.0,
+            beta: 1.0,
+            rho: 0.1,
+            tau0: 1.0,
+            q0: 1.0,
+            num_ants: 10,
+            evaporation_rate: 0.1,
+            max_iterations: 1000,
         }
     }
     fn calculate_tour_cost(&self, tour: &Vec<usize>) -> f64 {
@@ -61,7 +77,7 @@ impl<'a> AntColonyOptimization<'a> {
             if !visited {
                 let pheromone = self.pheromones[current_city][city];
                 let distance = 1.0 / self.tsp.weight(current_city, city);
-                let probability = pheromone.powf(self.options.alpha) * distance.powf(self.options.beta);
+                let probability = pheromone.powf(self.alpha) * distance.powf(self.beta);
                 probabilities[city] = probability;
                 total += probability;
             }
@@ -85,7 +101,7 @@ impl<'a> AntColonyOptimization<'a> {
         // Evaporation
         for row in self.pheromones.iter_mut() {
             for pheromone in row.iter_mut() {
-                *pheromone *= 1.0 - self.options.evaporation_rate;
+                *pheromone *= 1.0 - self.evaporation_rate;
             }
         }
 
@@ -115,13 +131,19 @@ impl<'a> AntColonyOptimization<'a> {
 }
 
 impl TspSolver for AntColonyOptimization<'_> {
-    fn solve(&mut self, options: &SolverOptions) -> Solution {
-        self.options = options.clone();
+    fn solve(&mut self, options: &SolverConfig) -> Solution {
+        (self.alpha, self.beta, self.rho, self.tau0, self.q0, self.num_ants, self.evaporation_rate, self.max_iterations)
+            = match options {
+            SolverConfig::MetaheuristicAlgorithm(MetaheuristicAlgorithmConfig::AntColonyOptimization { alpha, beta, rho, tau0, q0, num_ants, evaporation_rate, max_iterations }) =>
+                (*alpha, *beta, *rho, *tau0, *q0, *num_ants, *evaporation_rate, *max_iterations),
+            _ => panic!("Invalid solver configuration"),
+        };
 
-        for _ in 0..self.options.max_iterations {
-            let mut solutions = Vec::with_capacity(self.options.num_ants);
 
-            for _ in 0..self.options.num_ants {
+        for _ in 0..self.max_iterations {
+            let mut solutions = Vec::with_capacity(self.num_ants);
+
+            for _ in 0..self.num_ants {
                 let solution = self.construct_solution();
                 solutions.push(solution);
             }
@@ -148,10 +170,9 @@ impl TspSolver for AntColonyOptimization<'_> {
 
 #[cfg(test)]
 mod tests {
-    use tspf::TspBuilder;
-    use crate::algorithms::{SolverOptions, TspSolver};
-    use crate::algorithms::heuristic::local_search::two_opt::TwoOpt;
     use super::*;
+    use crate::algorithms::{SolverConfig, TspSolver};
+    use tspf::TspBuilder;
 
 
     #[test]
@@ -173,10 +194,9 @@ mod tests {
         ";
         let tsp = TspBuilder::parse_str(data).unwrap();
 
-        let mut options = SolverOptions::default();
-        options.verbose = true;
-        let mut solver = AntColonyOptimization::new(&tsp, options);
-        let solution = solver.solve(&SolverOptions::default());
+        let options = SolverConfig::new_ant_colony_optimization(5.0, 10.0, 0.1, 1.0, 1.0, 20, 10.0, 1000);
+        let mut solver = AntColonyOptimization::new(&tsp);
+        let solution = solver.solve(&options);
 
         println!("{:?}", solution);
     }
@@ -189,9 +209,9 @@ mod tests {
         let tsp = TspBuilder::parse_path(path).unwrap();
 
         let size = tsp.dim();
-        let options = SolverOptions::default();
-        let mut solver = AntColonyOptimization::new(&tsp, options);
-        let solution = solver.solve(&SolverOptions::default());
+        let options = SolverConfig::default();
+        let mut solver = AntColonyOptimization::new(&tsp);
+        let solution = solver.solve(&options);
         println!("{:?}", solution);
         assert_eq!(solution.tour.len(), size);
     }

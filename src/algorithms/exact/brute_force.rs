@@ -1,5 +1,7 @@
+use crate::algorithms::utils::SolverConfig;
+use crate::algorithms::{Solution, TspSolver};
 use tspf::Tsp;
-use crate::algorithms::{Solution, SolverOptions, TspSolver};
+
 
 pub struct BruteForce<'a> {
     tsp: &'a Tsp,
@@ -9,7 +11,7 @@ pub struct BruteForce<'a> {
 
 
 impl TspSolver for BruteForce<'_> {
-    fn solve(&mut self, _options: &SolverOptions) -> Solution {
+    fn solve(&mut self, _options: &SolverConfig) -> Solution {
         let mut tour = vec![0];
         self.solve_recursive(&mut tour, 0.0);
 
@@ -57,9 +59,10 @@ impl<'a> BruteForce<'a> {
 
 #[cfg(test)]
 mod tests {
-    use tspf::TspBuilder;
     use crate::algorithms::exact::brute_force::BruteForce;
-    use crate::algorithms::{SolverOptions, TspSolver};
+    use crate::algorithms::utils::SolverConfig;
+    use crate::algorithms::TspSolver;
+    use tspf::TspBuilder;
 
     #[test]
     fn test() {
@@ -82,7 +85,7 @@ mod tests {
         let tsp = TspBuilder::parse_str(data).unwrap();
 
         let mut solver = BruteForce::new(&tsp);
-        let options = SolverOptions::default();
+        let options = SolverConfig::new_brute_force(1000);
 
         let solution = solver.solve(&options);
 

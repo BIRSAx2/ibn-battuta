@@ -1,22 +1,29 @@
-use std::f64;
-use tspf::{Tsp};
-use crate::algorithms::{Solution, SolverOptions, TspSolver};
+use crate::algorithms::utils::{MetaheuristicAlgorithmConfig, SolverConfig};
+use crate::algorithms::{Solution, TspSolver};
 use rand::prelude::*;
+use std::f64;
+use tspf::Tsp;
 
 pub struct SimulatedAnnealing<'a> {
     tsp: &'a Tsp,
     tour: Vec<usize>,
     cost: f64,
-    options: SolverOptions,
+    initial_temperature: f64,
+    cooling_rate: f64,
+    min_temperature: f64,
+    max_iterations: usize,
 }
 
 impl<'a> SimulatedAnnealing<'a> {
-    pub fn new(tsp: &'a Tsp, options: SolverOptions) -> SimulatedAnnealing<'a> {
+    pub fn new(tsp: &'a Tsp) -> SimulatedAnnealing<'a> {
         SimulatedAnnealing {
             tsp,
             tour: vec![],
             cost: 0.0,
-            options,
+            initial_temperature: 1000.0,
+            cooling_rate: 0.003,
+            min_temperature: 0.0001,
+            max_iterations: 1000,
         }
     }
 
@@ -66,17 +73,26 @@ impl<'a> SimulatedAnnealing<'a> {
 }
 
 impl TspSolver for SimulatedAnnealing<'_> {
-    fn solve(&mut self, options: &SolverOptions) -> Solution {
+    fn solve(&mut self, options: &SolverConfig) -> Solution {
+        (self.initial_temperature, self.cooling_rate, self.min_temperature, self.max_iterations) = match options {
+            SolverConfig::MetaheuristicAlgorithm(MetaheuristicAlgorithmConfig::SimulatedAnnealing {
+                                                     initial_temperature,
+                                                     cooling_rate,
+                                                     min_temperature,
+                                                     max_iterations,
+                                                 }) => (*initial_temperature, *cooling_rate, *min_temperature, *max_iterations),
+            _ => (1000.0, 0.003, 0.0001, 1000),
+        };
         let mut rng = rand::thread_rng();
         self.initial_solution();
 
         let mut best_tour = self.tour.clone();
         let mut best_cost = self.cost;
 
-        let mut temperature = options.initial_temperature;
-        let cooling_rate = options.cooling_rate;
+        let mut temperature = self.initial_temperature;
+        let cooling_rate = self.cooling_rate;
 
-        for _ in 0..options.max_iterations {
+        for _ in 0..self.max_iterations {
             let new_tour = self.generate_neighbor();
             let new_cost = self.calculate_tour_cost(&new_tour);
 
@@ -92,7 +108,7 @@ impl TspSolver for SimulatedAnnealing<'_> {
 
             temperature *= 1.0 - cooling_rate;
 
-            if temperature < options.min_temperature {
+            if temperature < self.min_temperature {
                 break;
             }
         }
@@ -118,10 +134,9 @@ impl TspSolver for SimulatedAnnealing<'_> {
 
 #[cfg(test)]
 mod tests {
-    use tspf::TspBuilder;
-    use crate::algorithms::{SolverOptions, TspSolver};
-    use crate::algorithms::heuristic::local_search::two_opt::TwoOpt;
     use super::*;
+    use crate::algorithms::{SolverConfig, TspSolver};
+    use tspf::TspBuilder;
 
 
     #[test]
@@ -143,10 +158,9 @@ mod tests {
         ";
         let tsp = TspBuilder::parse_str(data).unwrap();
 
-        let mut options = SolverOptions::default();
-        options.verbose = true;
-        let mut solver = SimulatedAnnealing::new(&tsp, options);
-        let solution = solver.solve(&SolverOptions::default());
+        let options = SolverConfig::new_simulated_annealing(1000.0, 0.003, 0.0001, 1000);
+        let mut solver = SimulatedAnnealing::new(&tsp);
+        let solution = solver.solve(&options);
 
         println!("{:?}", solution);
     }
@@ -159,9 +173,9 @@ mod tests {
         let tsp = TspBuilder::parse_path(path).unwrap();
 
         let size = tsp.dim();
-        let options = SolverOptions::default();
-        let mut solver = SimulatedAnnealing::new(&tsp, options);
-        let solution = solver.solve(&SolverOptions::default());
+        let options = SolverConfig::new_simulated_annealing(1000.0, 0.003, 0.0001, 1000);
+        let mut solver = SimulatedAnnealing::new(&tsp);
+        let solution = solver.solve(&options);
         println!("{:?}", solution);
         assert_eq!(solution.tour.len(), size);
     }

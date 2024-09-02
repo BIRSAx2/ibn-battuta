@@ -1,21 +1,21 @@
+use crate::algorithms::utils::{HeuristicAlgorithmConfig, SolverConfig};
+use crate::algorithms::{Solution, TspSolver};
 use tspf::Tsp;
 
-
-use crate::algorithms::{SolverOptions, TspSolver, Solution};
 pub struct TwoOpt<'a> {
     tsp: &'a Tsp,
     tour: Vec<usize>,
     cost: f64,
-    options: SolverOptions,
+    verbose: bool,
 }
 
 impl TwoOpt<'_> {
-    pub fn new(tsp: &Tsp, options: SolverOptions) -> TwoOpt {
+    pub fn new(tsp: &Tsp) -> TwoOpt {
         TwoOpt {
             tsp,
             tour: vec![],
             cost: 0.0,
-            options,
+            verbose: false,
         }
     }
 
@@ -53,7 +53,7 @@ impl TwoOpt<'_> {
                         self.cost = self.calculate_tour_cost();
                         improved = true;
 
-                        if self.options.verbose {
+                        if self.verbose {
                             println!(
                                 "2OPT: Swapped edges ({} - {}) and ({} - {}), new cost: {}",
                                 self.tour[i],
@@ -71,13 +71,22 @@ impl TwoOpt<'_> {
 }
 
 impl TspSolver for TwoOpt<'_> {
-    fn solve(&mut self, options: &SolverOptions) -> Solution {
-        let mut base_solver = options.base_solver.create(&self.tsp);
+    fn solve(&mut self, options: &SolverConfig) -> Solution {
+        let (base_solver, verbose) = match options {
+            SolverConfig::HeuristicAlgorithm(HeuristicAlgorithmConfig::LocalSearch { base_solver, verbose, .. }) => {
+                (base_solver, verbose)
+            }
+            _ => panic!("Invalid solver configuration"),
+        };
+
+        self.verbose = *verbose;
+
+        let mut base_solver = base_solver.create(&self.tsp, options);
         let base_solution = base_solver.solve(options);
         self.tour = base_solution.tour.clone();
         self.cost = base_solution.total;
 
-        if options.verbose {
+        if self.verbose {
             println!("Initial tour: {:?}", self.tour);
             println!("Initial cost: {}", self.cost);
         }
@@ -99,9 +108,10 @@ impl TspSolver for TwoOpt<'_> {
 }
 #[cfg(test)]
 mod tests {
+    use crate::algorithms::heuristic::local_search::two_opt::TwoOpt;
+    use crate::algorithms::utils::{Solver, SolverConfig};
+    use crate::algorithms::TspSolver;
     use tspf::TspBuilder;
-    use crate::algorithms::{SolverOptions, TspSolver};
-    use super::*;
 
     #[test]
     fn test_two_opt() {
@@ -122,10 +132,9 @@ mod tests {
         ";
         let tsp = TspBuilder::parse_str(data).unwrap();
 
-        let mut options = SolverOptions::default();
-        options.verbose = true;
-        let mut solver = TwoOpt::new(&tsp, options);
-        let solution = solver.solve(&SolverOptions::default());
+        let options = SolverConfig::default();
+        let mut solver = TwoOpt::new(&tsp);
+        let solution = solver.solve(&options);
 
         println!("{:?}", solution);
     }
@@ -138,9 +147,9 @@ mod tests {
         let tsp = TspBuilder::parse_path(path).unwrap();
 
         let size = tsp.dim();
-        let options = SolverOptions::default();
-        let mut solver = TwoOpt::new(&tsp, options);
-        let solution = solver.solve(&SolverOptions::default());
+        let options = SolverConfig::new_local_search(Solver::NearestNeighbor, false, 1000);
+        let mut solver = TwoOpt::new(&tsp);
+        let solution = solver.solve(&options);
         println!("{:?}", solution);
         assert_eq!(solution.tour.len(), size);
     }

@@ -1,9 +1,9 @@
-use std::f64;
-use tspf::{Tsp};
-use crate::algorithms::{Solution, SolverOptions, Solvers, TspSolver};
+use crate::algorithms::utils::{MetaheuristicAlgorithmConfig, SolverConfig};
+use crate::algorithms::{Solution, TspSolver};
 use rand::prelude::*;
-use crate::algorithms::metaheuristic::simulated_annealing::SimulatedAnnealing;
-use crate::algorithms::heuristic::nearest_neighbor::NearestNeighbor;
+use std::f64;
+use tspf::Tsp;
+
 
 pub struct AntColonySystem<'a> {
     tsp: &'a Tsp,
@@ -11,15 +11,23 @@ pub struct AntColonySystem<'a> {
     heuristic: Vec<Vec<f64>>,
     best_tour: Vec<usize>,
     best_cost: f64,
-    options: SolverOptions,
+
+    // params
+    alpha: f64,
+    beta: f64,
+    rho: f64,
+    tau0: f64,
+    q0: f64,
+    num_ants: usize,
+    evaporation_rate: f64,
+    elitism: f64,
+    max_iterations: usize,
 }
 
 impl<'a> AntColonySystem<'a> {
-    pub fn new(tsp: &'a Tsp, options: SolverOptions) -> AntColonySystem<'a> {
+    pub fn new(tsp: &'a Tsp) -> AntColonySystem<'a> {
         let dim = tsp.dim();
-        let mut nn = NearestNeighbor::new(&tsp);
-        let nn_cost = nn.solve(&SolverOptions::default()).total;
-        let initial_pheromone = 1.0 / (dim as f64 * nn_cost);
+        let initial_pheromone = 1.0 / (dim as f64 * dim as f64);
         let pheromones = vec![vec![initial_pheromone; dim]; dim];
         let heuristic = vec![vec![0.0; dim]; dim];
 
@@ -29,7 +37,19 @@ impl<'a> AntColonySystem<'a> {
             heuristic,
             best_tour: vec![],
             best_cost: f64::INFINITY,
-            options,
+
+            // params
+
+            alpha: 1.0,
+            beta: 1.0,
+            rho: 0.1,
+            tau0: initial_pheromone,
+            q0: 0.9,
+            num_ants: 10,
+            evaporation_rate: 0.1,
+            elitism: 1.0,
+            max_iterations: 1000,
+
         };
 
         acs.initialize_heuristic();
@@ -79,7 +99,7 @@ impl<'a> AntColonySystem<'a> {
     fn select_next_city(&self, partial_tour: &[usize], visited: &[bool], rng: &mut ThreadRng) -> usize {
         let current_city = partial_tour[partial_tour.len() - 1];
 
-        if rng.gen::<f64>() < self.options.q0 {
+        if rng.gen::<f64>() < self.q0 {
             // Exploitation (choose best)
             self.select_best_city(current_city, visited)
         } else {
@@ -92,8 +112,8 @@ impl<'a> AntColonySystem<'a> {
         (0..self.tsp.dim())
             .filter(|&city| !visited[city])
             .max_by(|&a, &b| {
-                let score_a = self.pheromones[current_city][a] * self.heuristic[current_city][a].powf(self.options.beta);
-                let score_b = self.pheromones[current_city][b] * self.heuristic[current_city][b].powf(self.options.beta);
+                let score_a = self.pheromones[current_city][a] * self.heuristic[current_city][a].powf(self.beta);
+                let score_b = self.pheromones[current_city][b] * self.heuristic[current_city][b].powf(self.beta);
                 score_a.partial_cmp(&score_b).unwrap()
             })
             .unwrap()
@@ -105,7 +125,7 @@ impl<'a> AntColonySystem<'a> {
 
         for (city, &visited) in visited.iter().enumerate() {
             if !visited {
-                let probability = self.pheromones[current_city][city] * self.heuristic[current_city][city].powf(self.options.beta);
+                let probability = self.pheromones[current_city][city] * self.heuristic[current_city][city].powf(self.beta);
                 probabilities[city] = probability;
                 total += probability;
             }
@@ -127,7 +147,7 @@ impl<'a> AntColonySystem<'a> {
 
     fn local_pheromone_update(&mut self, edge: &[usize]) {
         let (i, j) = (edge[0], edge[1]);
-        self.pheromones[i][j] = (1.0 - self.options.rho) * self.pheromones[i][j] + self.options.rho * self.options.tau0;
+        self.pheromones[i][j] = (1.0 - self.rho) * self.pheromones[i][j] + self.rho * self.tau0;
         self.pheromones[j][i] = self.pheromones[i][j];
     }
 
@@ -138,7 +158,7 @@ impl<'a> AntColonySystem<'a> {
             let from = self.best_tour[i];
             let to = self.best_tour[(i + 1) % self.best_tour.len()];
 
-            self.pheromones[from][to] = (1.0 - self.options.alpha) * self.pheromones[from][to] + self.options.alpha * deposit;
+            self.pheromones[from][to] = (1.0 - self.alpha) * self.pheromones[from][to] + self.alpha * deposit;
             self.pheromones[to][from] = self.pheromones[from][to];
         }
     }
@@ -153,11 +173,21 @@ impl<'a> AntColonySystem<'a> {
 }
 
 impl TspSolver for AntColonySystem<'_> {
-    fn solve(&mut self, options: &SolverOptions) -> Solution {
-        self.options = options.clone();
-
-        for _ in 0..self.options.max_iterations {
-            for _ in 0..self.options.num_ants {
+    fn solve(&mut self, options: &SolverConfig) -> Solution {
+        (self.alpha, self.beta, self.rho,
+         self.tau0, self.q0, self.num_ants,
+         self.evaporation_rate, self.elitism,
+         self.max_iterations) = match options {
+            SolverConfig::MetaheuristicAlgorithm(MetaheuristicAlgorithmConfig::AntColonySystem {
+                                                     alpha, beta, rho,
+                                                     tau0, q0, num_ants,
+                                                     evaporation_rate, elitism,
+                                                     max_iterations,
+                                                 }) => (*alpha, *beta, *rho, *tau0, *q0, *num_ants, *evaporation_rate, *elitism, *max_iterations),
+            _ => panic!("Invalid solver configuration"),
+        };
+        for _ in 0..self.max_iterations {
+            for _ in 0..self.num_ants {
                 let solution = self.construct_solution();
                 self.update_best_solution(&solution);
             }
@@ -182,11 +212,9 @@ impl TspSolver for AntColonySystem<'_> {
 
 #[cfg(test)]
 mod tests {
+    use crate::algorithms::metaheuristic::ant_colony::ant_colony_system::AntColonySystem;
+    use crate::algorithms::{SolverConfig, TspSolver};
     use tspf::TspBuilder;
-    use crate::algorithms::{SolverOptions, TspSolver};
-    use crate::algorithms::heuristic::local_search::two_opt::TwoOpt;
-    use super::*;
-
 
     #[test]
     fn test_example() {
@@ -207,10 +235,9 @@ mod tests {
         ";
         let tsp = TspBuilder::parse_str(data).unwrap();
 
-        let mut options = SolverOptions::default();
-        options.verbose = true;
-        let mut solver = AntColonySystem::new(&tsp, options);
-        let solution = solver.solve(&SolverOptions::default());
+        let options = SolverConfig::new_ant_colony_system(5.0, 10.0, 0.1, 1.0, 1.0, 20, 10.0, 1.0, 1000);
+        let mut solver = AntColonySystem::new(&tsp);
+        let solution = solver.solve(&options);
 
         println!("{:?}", solution);
     }
@@ -223,9 +250,9 @@ mod tests {
         let tsp = TspBuilder::parse_path(path).unwrap();
 
         let size = tsp.dim();
-        let options = SolverOptions::default();
-        let mut solver = AntColonySystem::new(&tsp, options);
-        let solution = solver.solve(&SolverOptions::default());
+        let options = SolverConfig::default();
+        let mut solver = AntColonySystem::new(&tsp);
+        let solution = solver.solve(&options);
         println!("{:?}", solution);
         assert_eq!(solution.tour.len(), size);
     }
