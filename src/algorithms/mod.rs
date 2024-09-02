@@ -53,6 +53,7 @@ pub struct SolverOptions {
     pub rho: f64,
     pub q0: f64,
     pub tau0: f64,
+    pub num_red_ants: usize,
 }
 
 
@@ -71,13 +72,14 @@ impl Default for SolverOptions {
             tournament_size: 5,
             mutation_rate: 0.01,
             max_generations: 1000,
-            num_ants: 10,
+            num_ants: 20,
             alpha: 1.0,
             beta: 2.0,
             evaporation_rate: 0.1,
             rho: 0.1,
             q0: 0.9,
             tau0: 0.1,
+            num_red_ants: 5,
         }
     }
 }
@@ -111,14 +113,13 @@ pub trait TspSolver {
     fn solve(&mut self, options: &SolverOptions) -> Solution;
     fn tour(&self) -> Vec<usize>;
     fn cost(&self, from: usize, to: usize) -> f64;
-    fn calculate_tour_cost(&self) -> f64 {
-        let mut cost = 0.0;
-        let len = self.tour().len();
-        for i in 0..len {
-            let from = self.tour()[i];
-            let to = self.tour()[(i + 1) % len];
-            cost += self.cost(from, to) as f64;
+    fn calculate_tour_cost(&self, tour: &Vec<usize>) -> f64 {
+        let mut total_cost = 0.0;
+        for i in 0..tour.len() {
+            let from = tour[i];
+            let to = tour[(i + 1) % tour.len()];
+            total_cost += self.cost(from, to);
         }
-        cost
+        total_cost
     }
 }
