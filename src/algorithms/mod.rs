@@ -46,6 +46,10 @@ pub struct SolverOptions {
     pub tournament_size: usize,
     pub mutation_rate: f64,
     pub max_generations: usize,
+    pub num_ants: usize,
+    pub alpha: f64,
+    pub beta: f64,
+    pub evaporation_rate: f64,
 }
 
 
@@ -64,6 +68,10 @@ impl Default for SolverOptions {
             tournament_size: 5,
             mutation_rate: 0.01,
             max_generations: 1000,
+            num_ants: 10,
+            alpha: 1.0,
+            beta: 2.0,
+            evaporation_rate: 0.1,
         }
     }
 }
