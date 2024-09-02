@@ -1,3 +1,4 @@
+use std::hash::RandomState;
 use tspf::{Tsp};
 use crate::algorithms::exact::branch_and_bound::BranchAndBound;
 use crate::algorithms::exact::brute_force::BruteForce;
@@ -6,6 +7,7 @@ use crate::algorithms::heuristic::nearest_neighbor::NearestNeighbor;
 
 mod exact;
 mod heuristic;
+mod metaheuristic;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Solvers {
@@ -37,6 +39,13 @@ pub struct SolverOptions {
     pub verbose: bool,
     pub base_solver: Solvers,
     pub max_iterations: u32,
+    pub initial_temperature: f64,
+    pub cooling_rate: f64,
+    pub min_temperature: f64,
+    pub population_size: usize,
+    pub tournament_size: usize,
+    pub mutation_rate: f64,
+    pub max_generations: usize,
 }
 
 
@@ -48,6 +57,13 @@ impl Default for SolverOptions {
             verbose: true,
             base_solver: Solvers::NearestNeighbor,
             max_iterations: 1000,
+            cooling_rate: 0.095,
+            initial_temperature: 10000.0,
+            min_temperature: 0.001,
+            population_size: 100,
+            tournament_size: 5,
+            mutation_rate: 0.01,
+            max_generations: 1000,
         }
     }
 }

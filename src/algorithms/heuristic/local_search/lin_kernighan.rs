@@ -10,7 +10,7 @@ pub struct LinKernighan<'a> {
     options: SolverOptions,
 }
 
-
+// TODO: Add verbose output
 impl<'a> LinKernighan<'a> {
     pub fn new(tsp: &'a Tsp, options: SolverOptions) -> LinKernighan<'a> {
         LinKernighan {
@@ -188,7 +188,7 @@ mod tests {
 
         let size = tsp.dim();
         let options = SolverOptions::default();
-        let mut solver = TwoOpt::new(&tsp, options);
+        let mut solver = LinKernighan::new(&tsp, options);
         let solution = solver.solve(&SolverOptions::default());
         println!("{:?}", solution);
         assert_eq!(solution.tour.len(), size);
