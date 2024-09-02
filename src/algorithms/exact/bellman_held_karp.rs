@@ -93,6 +93,13 @@ impl TspSolver for BellmanHeldKarp {
         self.bellman_held_karp();
         Solution::new(self.best_tour.iter().map(|&i| i as usize).collect(), self.best_cost)
     }
+    fn tour(&self) -> Vec<usize> {
+        self.best_tour.clone()
+    }
+
+    fn cost(&self, from: usize, to: usize) -> f64 {
+        self.tsp.weight(from, to)
+    }
 }
 
 #[cfg(test)]

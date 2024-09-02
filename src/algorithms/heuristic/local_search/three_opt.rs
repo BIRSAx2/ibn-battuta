@@ -80,30 +80,30 @@ impl ThreeOpt<'_> {
         // Case 1: no change (do nothing)
 
         // Case 2: 2-opt between i+1 and j (reverse segment between i+1 and j)
-        tour1[i+1..=j].reverse();
+        tour1[i + 1..=j].reverse();
 
         // Case 3: 2-opt between j+1 and k (reverse segment between j+1 and k)
-        tour2[j+1..=k].reverse();
+        tour2[j + 1..=k].reverse();
 
         // Case 4: 2-opt between i+1 and k (reverse segment between i+1 and k)
-        tour3[i+1..=k].reverse();
+        tour3[i + 1..=k].reverse();
 
         // Case 5: 3-opt with reversing segments i+1 to j and j+1 to k
-        tour4[i+1..=j].reverse();
-        tour4[j+1..=k].reverse();
+        tour4[i + 1..=j].reverse();
+        tour4[j + 1..=k].reverse();
 
         // Case 6: 3-opt with reversing segments i+1 to j and i+1 to k
-        tour5[i+1..=j].reverse();
-        tour5[i+1..=k].reverse();
+        tour5[i + 1..=j].reverse();
+        tour5[i + 1..=k].reverse();
 
         // Case 7: 3-opt with reversing segments j+1 to k and i+1 to k
-        tour6[j+1..=k].reverse();
-        tour6[i+1..=k].reverse();
+        tour6[j + 1..=k].reverse();
+        tour6[i + 1..=k].reverse();
 
         // Case 8: 3-opt with reversing all segments
-        tour7[i+1..=j].reverse();
-        tour7[j+1..=k].reverse();
-        tour7[i+1..=k].reverse();
+        tour7[i + 1..=j].reverse();
+        tour7[j + 1..=k].reverse();
+        tour7[i + 1..=k].reverse();
 
         new_tours.push(tour1);
         new_tours.push(tour2);
@@ -146,6 +146,13 @@ impl TspSolver for ThreeOpt<'_> {
             tour: self.tour.clone(),
             total: self.cost,
         }
+    }
+    fn tour(&self) -> Vec<usize> {
+        self.tour.clone()
+    }
+
+    fn cost(&self, from: usize, to: usize) -> f64 {
+        self.tsp.weight(from, to)
     }
 }
 

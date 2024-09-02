@@ -35,7 +35,8 @@ pub struct SolverOptions {
     pub epochs: u32,
     pub show_progress: bool,
     pub verbose: bool,
-    pub base_solver: Solvers
+    pub base_solver: Solvers,
+    pub max_iterations: u32,
 }
 
 
@@ -45,7 +46,8 @@ impl Default for SolverOptions {
             epochs: 1,
             show_progress: false,
             verbose: true,
-            base_solver: Solvers::NearestNeighbor
+            base_solver: Solvers::NearestNeighbor,
+            max_iterations: 1000,
         }
     }
 }
@@ -77,4 +79,16 @@ impl Solution {
 
 pub trait TspSolver {
     fn solve(&mut self, options: &SolverOptions) -> Solution;
+    fn tour(&self) -> Vec<usize>;
+    fn cost(&self, from: usize, to: usize) -> f64;
+    fn calculate_tour_cost(&self) -> f64 {
+        let mut cost = 0.0;
+        let len = self.tour().len();
+        for i in 0..len {
+            let from = self.tour()[i];
+            let to = self.tour()[(i + 1) % len];
+            cost += self.cost(from, to) as f64;
+        }
+        cost
+    }
 }

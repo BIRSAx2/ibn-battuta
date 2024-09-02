@@ -89,6 +89,13 @@ impl TspSolver for TwoOpt<'_> {
             total: self.cost,
         }
     }
+    fn tour(&self) -> Vec<usize> {
+        self.tour.clone()
+    }
+
+    fn cost(&self, from: usize, to: usize) -> f64 {
+        self.tsp.weight(from, to)
+    }
 }
 #[cfg(test)]
 mod tests {
