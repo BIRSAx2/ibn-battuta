@@ -50,6 +50,9 @@ pub struct SolverOptions {
     pub alpha: f64,
     pub beta: f64,
     pub evaporation_rate: f64,
+    pub rho: f64,
+    pub q0: f64,
+    pub tau0: f64,
 }
 
 
@@ -72,6 +75,9 @@ impl Default for SolverOptions {
             alpha: 1.0,
             beta: 2.0,
             evaporation_rate: 0.1,
+            rho: 0.1,
+            q0: 0.9,
+            tau0: 0.1,
         }
     }
 }
