@@ -1,4 +1,3 @@
-use crate::algorithms::utils::{MetaheuristicAlgorithmConfig, SolverConfig};
 use crate::algorithms::{Solution, TspSolver};
 use rand::prelude::*;
 use std::f64;
@@ -15,15 +14,19 @@ pub struct SimulatedAnnealing<'a> {
 }
 
 impl<'a> SimulatedAnnealing<'a> {
-    pub fn new(tsp: &'a Tsp) -> SimulatedAnnealing<'a> {
+    pub fn with_options(tsp: &'a Tsp, initial_temperature: f64,
+                        cooling_rate: f64,
+                        min_temperature: f64,
+                        max_iterations: usize,
+    ) -> SimulatedAnnealing<'a> {
         SimulatedAnnealing {
             tsp,
             tour: vec![],
             cost: 0.0,
-            initial_temperature: 1000.0,
-            cooling_rate: 0.003,
-            min_temperature: 0.0001,
-            max_iterations: 1000,
+            initial_temperature,
+            cooling_rate,
+            min_temperature,
+            max_iterations,
         }
     }
 
@@ -73,16 +76,7 @@ impl<'a> SimulatedAnnealing<'a> {
 }
 
 impl TspSolver for SimulatedAnnealing<'_> {
-    fn solve(&mut self, options: &SolverConfig) -> Solution {
-        (self.initial_temperature, self.cooling_rate, self.min_temperature, self.max_iterations) = match options {
-            SolverConfig::MetaheuristicAlgorithm(MetaheuristicAlgorithmConfig::SimulatedAnnealing {
-                                                     initial_temperature,
-                                                     cooling_rate,
-                                                     min_temperature,
-                                                     max_iterations,
-                                                 }) => (*initial_temperature, *cooling_rate, *min_temperature, *max_iterations),
-            _ => (1000.0, 0.003, 0.0001, 1000),
-        };
+    fn solve(&mut self) -> Solution {
         let mut rng = rand::thread_rng();
         self.initial_solution();
 
@@ -135,7 +129,7 @@ impl TspSolver for SimulatedAnnealing<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::algorithms::{SolverConfig, TspSolver};
+    use crate::algorithms::TspSolver;
     use tspf::TspBuilder;
 
 
@@ -158,9 +152,8 @@ mod tests {
         ";
         let tsp = TspBuilder::parse_str(data).unwrap();
 
-        let options = SolverConfig::new_simulated_annealing(1000.0, 0.003, 0.0001, 1000);
-        let mut solver = SimulatedAnnealing::new(&tsp);
-        let solution = solver.solve(&options);
+        let mut solver = SimulatedAnnealing::with_options(&tsp, 1000.0, 0.003, 0.0001, 1000);
+        let solution = solver.solve();
 
         println!("{:?}", solution);
     }
@@ -173,9 +166,8 @@ mod tests {
         let tsp = TspBuilder::parse_path(path).unwrap();
 
         let size = tsp.dim();
-        let options = SolverConfig::new_simulated_annealing(1000.0, 0.003, 0.0001, 1000);
-        let mut solver = SimulatedAnnealing::new(&tsp);
-        let solution = solver.solve(&options);
+        let mut solver = SimulatedAnnealing::with_options(&tsp, 1000.0, 0.003, 0.0001, 1000);
+        let solution = solver.solve();
         println!("{:?}", solution);
         assert_eq!(solution.tour.len(), size);
     }

@@ -1,8 +1,6 @@
-use crate::algorithms::utils::SolverConfig;
 use crate::algorithms::{Solution, TspSolver};
 use std::f64;
 use tspf::Tsp;
-
 
 pub struct Greedy<'a> {
     tsp: &'a Tsp,
@@ -25,7 +23,7 @@ impl<'a> Greedy<'a> {
 }
 
 impl TspSolver for Greedy<'_> {
-    fn solve(&mut self, _options: &SolverConfig) -> Solution {
+    fn solve(&mut self) -> Solution {
         let n = self.tsp.dim();
         let dist = |i: usize, j: usize| self.tsp.weight(i, j);
 
@@ -91,7 +89,7 @@ mod tests {
         let tsp = TspBuilder::parse_str(data).unwrap();
 
         let mut solver = Greedy::new(&tsp);
-        let solution = solver.solve(&mut SolverConfig::default());
+        let solution = solver.solve();
 
         println!("{:?}", solution);
     }
@@ -106,7 +104,7 @@ mod tests {
         let size = tsp.dim();
 
         let mut solver = Greedy::new(&tsp);
-        let solution = solver.solve(&mut SolverConfig::default());
+        let solution = solver.solve();
 
         println!("{:?}", solution);
         assert_eq!(solution.tour.len(), size);

@@ -1,4 +1,3 @@
-use crate::algorithms::utils::SolverConfig;
 use crate::algorithms::{Solution, TspSolver};
 use tspf::Tsp;
 
@@ -54,7 +53,7 @@ impl<'a> BranchAndBound<'a> {
 }
 
 impl TspSolver for BranchAndBound<'_> {
-    fn solve(&mut self, _options: &SolverConfig) -> Solution {
+    fn solve(&mut self) -> Solution {
         self.run();
         Solution::new(self.best_tour.iter().map(|&i| i as usize).collect(), self.best_cost)
     }
@@ -71,7 +70,6 @@ impl TspSolver for BranchAndBound<'_> {
 #[cfg(test)]
 mod tests {
     use crate::algorithms::exact::branch_and_bound::BranchAndBound;
-    use crate::algorithms::utils::SolverConfig;
     use crate::algorithms::TspSolver;
     use tspf::TspBuilder;
 
@@ -96,9 +94,7 @@ mod tests {
         let tsp = TspBuilder::parse_str(data).unwrap();
 
         let mut solver = BranchAndBound::new(&tsp);
-        let mut options = SolverConfig::new_branch_and_bound(1000);
-
-        let solution = solver.solve(&mut options);
+        let solution = solver.solve();
 
         assert_eq!(solution.tour.len(), 5);
         assert!((solution.total - 13.646824151749852).abs() < f64::EPSILON);

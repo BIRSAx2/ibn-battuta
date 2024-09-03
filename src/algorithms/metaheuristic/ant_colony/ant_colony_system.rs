@@ -1,9 +1,7 @@
-use crate::algorithms::utils::{MetaheuristicAlgorithmConfig, SolverConfig};
 use crate::algorithms::{Solution, TspSolver};
 use rand::prelude::*;
 use std::f64;
 use tspf::Tsp;
-
 
 pub struct AntColonySystem<'a> {
     tsp: &'a Tsp,
@@ -25,9 +23,18 @@ pub struct AntColonySystem<'a> {
 }
 
 impl<'a> AntColonySystem<'a> {
-    pub fn new(tsp: &'a Tsp) -> AntColonySystem<'a> {
+    pub fn with_options(tsp: &'a Tsp, alpha: f64,
+                        beta: f64,
+                        rho: f64,
+                        tau0: f64,
+                        q0: f64,
+                        num_ants: usize,
+                        evaporation_rate: f64,
+                        elitism: f64,
+                        max_iterations: usize,
+                        base_tour_length: f64) -> AntColonySystem<'a> {
         let dim = tsp.dim();
-        let initial_pheromone = 1.0 / (dim as f64 * dim as f64);
+        let initial_pheromone = 1.0 / (dim as f64 * base_tour_length as f64);
         let pheromones = vec![vec![initial_pheromone; dim]; dim];
         let heuristic = vec![vec![0.0; dim]; dim];
 
@@ -40,16 +47,15 @@ impl<'a> AntColonySystem<'a> {
 
             // params
 
-            alpha: 1.0,
-            beta: 1.0,
-            rho: 0.1,
-            tau0: initial_pheromone,
-            q0: 0.9,
-            num_ants: 10,
-            evaporation_rate: 0.1,
-            elitism: 1.0,
-            max_iterations: 1000,
-
+            alpha,
+            beta,
+            rho,
+            tau0,
+            q0,
+            num_ants,
+            evaporation_rate,
+            elitism,
+            max_iterations,
         };
 
         acs.initialize_heuristic();
@@ -173,19 +179,7 @@ impl<'a> AntColonySystem<'a> {
 }
 
 impl TspSolver for AntColonySystem<'_> {
-    fn solve(&mut self, options: &SolverConfig) -> Solution {
-        (self.alpha, self.beta, self.rho,
-         self.tau0, self.q0, self.num_ants,
-         self.evaporation_rate, self.elitism,
-         self.max_iterations) = match options {
-            SolverConfig::MetaheuristicAlgorithm(MetaheuristicAlgorithmConfig::AntColonySystem {
-                                                     alpha, beta, rho,
-                                                     tau0, q0, num_ants,
-                                                     evaporation_rate, elitism,
-                                                     max_iterations,
-                                                 }) => (*alpha, *beta, *rho, *tau0, *q0, *num_ants, *evaporation_rate, *elitism, *max_iterations),
-            _ => panic!("Invalid solver configuration"),
-        };
+    fn solve(&mut self) -> Solution {
         for _ in 0..self.max_iterations {
             for _ in 0..self.num_ants {
                 let solution = self.construct_solution();
@@ -212,8 +206,9 @@ impl TspSolver for AntColonySystem<'_> {
 
 #[cfg(test)]
 mod tests {
+    use crate::algorithms::heuristic::nearest_neighbor::NearestNeighbor;
     use crate::algorithms::metaheuristic::ant_colony::ant_colony_system::AntColonySystem;
-    use crate::algorithms::{SolverConfig, TspSolver};
+    use crate::algorithms::TspSolver;
     use tspf::TspBuilder;
 
     #[test]
@@ -234,10 +229,10 @@ mod tests {
         EOF
         ";
         let tsp = TspBuilder::parse_str(data).unwrap();
-
-        let options = SolverConfig::new_ant_colony_system(5.0, 10.0, 0.1, 1.0, 1.0, 20, 10.0, 1.0, 1000);
-        let mut solver = AntColonySystem::new(&tsp);
-        let solution = solver.solve(&options);
+        let mut nn = NearestNeighbor::new(&tsp);
+        let base_tour = nn.solve().total;
+        let mut solver = AntColonySystem::with_options(&tsp, 5.0, 10.0, 0.1, 1.0, 1.0, 20, 10.0, 1.0, 1000, base_tour);
+        let solution = solver.solve();
 
         println!("{:?}", solution);
     }
@@ -250,9 +245,11 @@ mod tests {
         let tsp = TspBuilder::parse_path(path).unwrap();
 
         let size = tsp.dim();
-        let options = SolverConfig::default();
-        let mut solver = AntColonySystem::new(&tsp);
-        let solution = solver.solve(&options);
+        let mut nn = NearestNeighbor::new(&tsp);
+        let base_tour = nn.solve().total;
+        let mut solver = AntColonySystem::with_options(&tsp, 5.0, 10.0, 0.1, 1.0, 1.0, 20, 10.0, 1.0, 1000, base_tour);
+        let solution = solver.solve();
+
         println!("{:?}", solution);
         assert_eq!(solution.tour.len(), size);
     }

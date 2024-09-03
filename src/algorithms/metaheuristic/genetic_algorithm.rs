@@ -1,4 +1,3 @@
-use crate::algorithms::utils::{MetaheuristicAlgorithmConfig, SolverConfig};
 use crate::algorithms::{Solution, TspSolver};
 use rand::prelude::*;
 use std::f64;
@@ -17,18 +16,22 @@ pub struct GeneticAlgorithm<'a> {
 }
 
 impl<'a> GeneticAlgorithm<'a> {
-    pub fn new(tsp: &'a Tsp) -> GeneticAlgorithm<'a> {
+    pub fn with_options(tsp: &'a Tsp, population_size: usize,
+                        tournament_size: usize,
+                        mutation_rate: f64,
+                        max_generations: usize) -> GeneticAlgorithm<'a> {
         GeneticAlgorithm {
             tsp,
             population: vec![],
             best_tour: vec![],
             best_cost: f64::INFINITY,
-            population_size: 100,
-            tournament_size: 5,
-            mutation_rate: 0.01,
-            max_generations: 1000,
+            population_size,
+            tournament_size,
+            mutation_rate,
+            max_generations,
         }
     }
+
 
     fn initialize_population(&mut self) {
         let mut rng = rand::thread_rng();
@@ -127,29 +130,7 @@ impl<'a> GeneticAlgorithm<'a> {
 }
 
 impl TspSolver for GeneticAlgorithm<'_> {
-    fn solve(&mut self, options: &SolverConfig) -> Solution {
-        (
-            self.population_size,
-            self.tournament_size,
-            self.mutation_rate,
-            self.max_generations,
-        ) = match options {
-            SolverConfig::MetaheuristicAlgorithm(meta) => match meta {
-                MetaheuristicAlgorithmConfig::GeneticAlgorithm {
-                    population_size,
-                    tournament_size,
-                    mutation_rate,
-                    max_generations,
-                } => (
-                    *population_size,
-                    *tournament_size,
-                    *mutation_rate,
-                    *max_generations,
-                ),
-                _ => panic!("Invalid configuration"),
-            },
-            _ => panic!("Invalid configuration"),
-        };
+    fn solve(&mut self) -> Solution {
         self.initialize_population();
 
         for _ in 0..self.max_generations {
@@ -176,7 +157,7 @@ impl TspSolver for GeneticAlgorithm<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::algorithms::{SolverConfig, TspSolver};
+    use crate::algorithms::TspSolver;
     use tspf::TspBuilder;
 
 
@@ -199,9 +180,8 @@ mod tests {
         ";
         let tsp = TspBuilder::parse_str(data).unwrap();
 
-        let options = SolverConfig::new_genetic_algorithm(100, 5, 0.01, 1000);
-        let mut solver = GeneticAlgorithm::new(&tsp);
-        let solution = solver.solve(&options);
+        let mut solver = GeneticAlgorithm::with_options(&tsp, 100, 5, 0.01, 1000);
+        let solution = solver.solve();
 
         println!("{:?}", solution);
     }
@@ -214,9 +194,8 @@ mod tests {
         let tsp = TspBuilder::parse_path(path).unwrap();
 
         let size = tsp.dim();
-        let options = SolverConfig::new_genetic_algorithm(100, 5, 0.01, 1000);
-        let mut solver = GeneticAlgorithm::new(&tsp);
-        let solution = solver.solve(&options);
+        let mut solver = GeneticAlgorithm::with_options(&tsp, 100, 5, 0.01, 1000);
+        let solution = solver.solve();
         println!("{:?}", solution);
         assert_eq!(solution.tour.len(), size);
     }

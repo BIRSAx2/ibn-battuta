@@ -1,4 +1,3 @@
-use crate::algorithms::utils::{HeuristicAlgorithmConfig, SolverConfig};
 use crate::algorithms::{Solution, TspSolver};
 use tspf::Tsp;
 
@@ -7,15 +6,28 @@ pub struct TwoOpt<'a> {
     tour: Vec<usize>,
     cost: f64,
     verbose: bool,
+    base_tour: Vec<usize>,
 }
 
-impl TwoOpt<'_> {
+
+impl<'a> TwoOpt<'a> {
     pub fn new(tsp: &Tsp) -> TwoOpt {
         TwoOpt {
             tsp,
             tour: vec![],
             cost: 0.0,
             verbose: false,
+            base_tour: tsp.node_coords().iter().map(|node| *node.0).collect(),
+        }
+    }
+
+    pub fn from(tsp: &Tsp, base_tour: Vec<usize>, verbose: bool) -> TwoOpt {
+        TwoOpt {
+            tsp,
+            tour: vec![],
+            cost: 0.0,
+            verbose,
+            base_tour,
         }
     }
 
@@ -71,20 +83,9 @@ impl TwoOpt<'_> {
 }
 
 impl TspSolver for TwoOpt<'_> {
-    fn solve(&mut self, options: &SolverConfig) -> Solution {
-        let (base_solver, verbose) = match options {
-            SolverConfig::HeuristicAlgorithm(HeuristicAlgorithmConfig::LocalSearch { base_solver, verbose, .. }) => {
-                (base_solver, verbose)
-            }
-            _ => panic!("Invalid solver configuration"),
-        };
-
-        self.verbose = *verbose;
-
-        let mut base_solver = base_solver.create(&self.tsp, options);
-        let base_solution = base_solver.solve(options);
-        self.tour = base_solution.tour.clone();
-        self.cost = base_solution.total;
+    fn solve(&mut self) -> Solution {
+        self.tour = self.base_tour.clone();
+        self.cost = self.calculate_tour_cost();
 
         if self.verbose {
             println!("Initial tour: {:?}", self.tour);
@@ -109,7 +110,7 @@ impl TspSolver for TwoOpt<'_> {
 #[cfg(test)]
 mod tests {
     use crate::algorithms::heuristic::local_search::two_opt::TwoOpt;
-    use crate::algorithms::utils::{Solver, SolverConfig};
+    use crate::algorithms::heuristic::nearest_neighbor::NearestNeighbor;
     use crate::algorithms::TspSolver;
     use tspf::TspBuilder;
 
@@ -132,9 +133,10 @@ mod tests {
         ";
         let tsp = TspBuilder::parse_str(data).unwrap();
 
-        let options = SolverConfig::default();
-        let mut solver = TwoOpt::new(&tsp);
-        let solution = solver.solve(&options);
+        let mut nn = NearestNeighbor::new(&tsp);
+        let base_tour = nn.solve().tour;
+        let mut solver = TwoOpt::from(&tsp, base_tour, false);
+        let solution = solver.solve();
 
         println!("{:?}", solution);
     }
@@ -147,9 +149,11 @@ mod tests {
         let tsp = TspBuilder::parse_path(path).unwrap();
 
         let size = tsp.dim();
-        let options = SolverConfig::new_local_search(Solver::NearestNeighbor, false, 1000);
-        let mut solver = TwoOpt::new(&tsp);
-        let solution = solver.solve(&options);
+        let mut nn = NearestNeighbor::new(&tsp);
+        let base_tour = nn.solve().tour;
+        let mut solver = TwoOpt::from(&tsp, base_tour, false);
+        let solution = solver.solve();
+
         println!("{:?}", solution);
         assert_eq!(solution.tour.len(), size);
     }

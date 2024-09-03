@@ -1,5 +1,3 @@
-use crate::algorithms::utils::SolverConfig;
-
 mod exact;
 mod heuristic;
 mod metaheuristic;
@@ -31,7 +29,7 @@ impl Solution {
 }
 
 pub trait TspSolver {
-    fn solve(&mut self, options: &SolverConfig) -> Solution;
+    fn solve(&mut self) -> Solution;
     fn tour(&self) -> Vec<usize>;
     fn cost(&self, from: usize, to: usize) -> f64;
     fn calculate_tour_cost(&self, tour: &Vec<usize>) -> f64 {

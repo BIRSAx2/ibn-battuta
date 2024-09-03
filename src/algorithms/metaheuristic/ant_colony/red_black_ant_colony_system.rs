@@ -1,5 +1,4 @@
-use crate::algorithms::utils::MetaheuristicAlgorithmConfig;
-use crate::algorithms::{Solution, SolverConfig, TspSolver};
+use crate::algorithms::{Solution, TspSolver};
 use rand::prelude::*;
 use std::f64;
 use tspf::Tsp;
@@ -24,9 +23,19 @@ pub struct RedBlackACS<'a> {
 }
 
 impl<'a> RedBlackACS<'a> {
-    pub fn new(tsp: &'a Tsp) -> RedBlackACS<'a> {
+    pub fn with_options(tsp: &'a Tsp, alpha: f64,
+                        beta: f64,
+                        rho: f64,
+                        tau0: f64,
+                        q0: f64,
+                        num_ants: usize,
+                        num_red_ants: usize,
+                        num_black_ants: usize,
+                        evaporation_rate: f64,
+                        max_iterations: usize,
+                        elitism: f64, base_tour_length: f64) -> RedBlackACS<'a> {
         let dim = tsp.dim();
-        let initial_pheromone = 1.0 / (dim as f64 * dim as f64);
+        let initial_pheromone = 1.0 / (dim as f64 * base_tour_length as f64);
         let pheromones = vec![vec![initial_pheromone; dim]; dim];
         let heuristic = vec![vec![0.0; dim]; dim];
 
@@ -39,17 +48,17 @@ impl<'a> RedBlackACS<'a> {
 
             // params
 
-            alpha: 1.0,
-            beta: 2.0,
-            rho: 0.1,
-            tau0: 1.0,
-            q0: 0.9,
-            num_ants: 10,
-            num_red_ants: 5,
-            num_black_ants: 5,
-            evaporation_rate: 0.1,
-            max_iterations: 100,
-            elitism: 0.1,
+            alpha,
+            beta,
+            rho,
+            tau0,
+            q0,
+            num_ants,
+            num_red_ants,
+            num_black_ants,
+            evaporation_rate,
+            max_iterations,
+            elitism,
         };
 
         rb_acs.initialize_heuristic();
@@ -167,19 +176,7 @@ impl<'a> RedBlackACS<'a> {
 }
 
 impl TspSolver for RedBlackACS<'_> {
-    fn solve(&mut self, options: &SolverConfig) -> Solution {
-        (self.alpha, self.beta, self.rho,
-         self.tau0, self.q0, self.num_ants,
-         self.num_red_ants, self.num_black_ants, self.evaporation_rate,
-         self.max_iterations, self.elitism) = match options {
-            SolverConfig::MetaheuristicAlgorithm(MetaheuristicAlgorithmConfig::RedBlackAntColonySystem {
-                                                     alpha, beta, rho,
-                                                     tau0, q0, num_ants,
-                                                     num_red_ants, num_black_ants, evaporation_rate,
-                                                     max_iterations, elitism,
-                                                 }) => (*alpha, *beta, *rho, *tau0, *q0, *num_ants, *num_red_ants, *num_black_ants, *evaporation_rate, *max_iterations, *elitism),
-            _ => panic!("Invalid algorithm configuration"),
-        };
+    fn solve(&mut self) -> Solution {
         for _ in 0..self.max_iterations {
             for ant in 0..self.num_ants {
                 let is_red = ant < self.num_red_ants;
@@ -208,9 +205,9 @@ impl TspSolver for RedBlackACS<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::algorithms::{SolverConfig, TspSolver};
+    use crate::algorithms::heuristic::nearest_neighbor::NearestNeighbor;
+    use crate::algorithms::TspSolver;
     use tspf::TspBuilder;
-
 
     #[test]
     fn test_example() {
@@ -231,9 +228,11 @@ mod tests {
         ";
         let tsp = TspBuilder::parse_str(data).unwrap();
 
-        let options = SolverConfig::new_red_black_ant_colony_system(1.0, 2.0, 0.1, 1.0, 0.9, 10, 5, 5, 0.1, 100, 0.1);
-        let mut solver = RedBlackACS::new(&tsp);
-        let solution = solver.solve(&options);
+        let mut nn = NearestNeighbor::new(&tsp);
+        let base_tour_length = nn.solve().total;
+
+        let mut solver = RedBlackACS::with_options(&tsp, 1.0, 2.0, 0.1, 1.0, 0.9, 10, 5, 5, 0.1, 100, 0.1, base_tour_length);
+        let solution = solver.solve();
 
         println!("{:?}", solution);
     }
@@ -246,9 +245,14 @@ mod tests {
         let tsp = TspBuilder::parse_path(path).unwrap();
 
         let size = tsp.dim();
-        let options = SolverConfig::new_red_black_ant_colony_system(1.0, 2.0, 0.1, 1.0, 0.9, 10, 5, 5, 0.1, 100, 0.1);
-        let mut solver = RedBlackACS::new(&tsp);
-        let solution = solver.solve(&options);
+
+
+        let mut nn = NearestNeighbor::new(&tsp);
+        let base_tour_length = nn.solve().total;
+
+        let mut solver = RedBlackACS::with_options(&tsp, 1.0, 2.0, 0.1, 1.0, 0.9, 10, 5, 5, 0.1, 100, 0.1, base_tour_length);
+        let solution = solver.solve();
+
         println!("{:?}", solution);
         assert_eq!(solution.tour.len(), size);
     }
