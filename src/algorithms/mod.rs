@@ -1,7 +1,11 @@
-mod exact;
-mod heuristic;
-mod metaheuristic;
+pub mod exact;
+pub mod heuristic;
+pub mod metaheuristic;
 mod utils;
+
+pub use exact::*;
+pub use heuristic::*;
+pub use metaheuristic::*;
 
 
 #[derive(Clone, Debug, PartialEq)]
