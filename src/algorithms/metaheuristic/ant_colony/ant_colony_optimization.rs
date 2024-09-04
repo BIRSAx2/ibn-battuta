@@ -3,7 +3,7 @@ use rand::prelude::*;
 use std::f64;
 use tspf::Tsp;
 
-pub struct AntColonyOptimization<'a> {
+pub struct AntSystem<'a> {
     tsp: &'a Tsp,
     pheromones: Vec<Vec<f64>>,
     best_tour: Vec<usize>,
@@ -11,30 +11,17 @@ pub struct AntColonyOptimization<'a> {
     alpha: f64,
     beta: f64,
     rho: f64,
-    tau0: f64,
-    q0: f64,
     num_ants: usize,
-    evaporation_rate: f64,
     max_iterations: usize,
-
 }
 
-impl<'a> AntColonyOptimization<'a> {
-    // TODO: Add with_options
-    pub fn with_options(tsp: &'a Tsp, alpha: f64,
-                        beta: f64,
-                        rho: f64,
-                        tau0: f64,
-                        q0: f64,
-                        num_ants: usize,
-                        evaporation_rate: f64,
-                        max_iterations: usize,
-                        base_tour_length: f64) -> AntColonyOptimization<'a> {
+impl<'a> AntSystem<'a> {
+    pub fn new(tsp: &'a Tsp, alpha: f64, beta: f64, rho: f64, num_ants: usize, max_iterations: usize) -> AntSystem<'a> {
         let dim = tsp.dim();
-        let initial_pheromone = 1.0 / (base_tour_length);
+        let initial_pheromone = 1.0 / (dim as f64);
         let pheromones = vec![vec![initial_pheromone; dim]; dim];
 
-        AntColonyOptimization {
+        AntSystem {
             tsp,
             pheromones,
             best_tour: vec![],
@@ -42,13 +29,11 @@ impl<'a> AntColonyOptimization<'a> {
             alpha,
             beta,
             rho,
-            tau0,
-            q0,
             num_ants,
-            evaporation_rate,
             max_iterations,
         }
     }
+
     fn calculate_tour_cost(&self, tour: &Vec<usize>) -> f64 {
         let mut total_cost = 0.0;
         for i in 0..tour.len() {
@@ -100,7 +85,6 @@ impl<'a> AntColonyOptimization<'a> {
             }
         }
 
-        // Fallback in case of floating-point precision issues
         visited.iter().position(|&v| !v).unwrap()
     }
 
@@ -108,7 +92,7 @@ impl<'a> AntColonyOptimization<'a> {
         // Evaporation
         for row in self.pheromones.iter_mut() {
             for pheromone in row.iter_mut() {
-                *pheromone *= 1.0 - self.evaporation_rate;
+                *pheromone *= 1.0 - self.rho;
             }
         }
 
@@ -137,7 +121,7 @@ impl<'a> AntColonyOptimization<'a> {
     }
 }
 
-impl TspSolver for AntColonyOptimization<'_> {
+impl TspSolver for AntSystem<'_> {
     fn solve(&mut self) -> Solution {
         for _ in 0..self.max_iterations {
             let mut solutions = Vec::with_capacity(self.num_ants);
@@ -166,12 +150,9 @@ impl TspSolver for AntColonyOptimization<'_> {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::algorithms::heuristic::nearest_neighbor::NearestNeighbor;
-    use crate::algorithms::TspSolver;
     use tspf::TspBuilder;
 
     #[test]
@@ -193,27 +174,22 @@ mod tests {
         ";
         let tsp = TspBuilder::parse_str(data).unwrap();
 
-        let mut nn = NearestNeighbor::new(&tsp);
-        let base_tour_length = nn.solve().total;
-        let mut solver = AntColonyOptimization::with_options(&tsp, 5.0, 10.0, 0.1, 1.0, 1.0, 20, 10.0, 1000, base_tour_length);
+        let mut solver = AntSystem::new(&tsp, 1.0, 2.0, 0.5, 10, 100);
         let solution = solver.solve();
 
         println!("{:?}", solution);
+        assert_eq!(solution.tour.len(), tsp.dim());
     }
 
-
     #[test]
-
     fn test_gr17() {
         let path = "data/tsplib/gr17.tsp";
         let tsp = TspBuilder::parse_path(path).unwrap();
 
-        let size = tsp.dim();
-        let mut nn = NearestNeighbor::new(&tsp);
-        let base_tour_length = nn.solve().total;
-        let mut solver = AntColonyOptimization::with_options(&tsp, 5.0, 10.0, 0.1, 1.0, 1.0, 20, 10.0, 1000, base_tour_length);
+        let mut solver = AntSystem::new(&tsp, 1.0, 2.0, 0.5, 20, 1000);
         let solution = solver.solve();
+
         println!("{:?}", solution);
-        assert_eq!(solution.tour.len(), size);
+        assert_eq!(solution.tour.len(), tsp.dim());
     }
 }
