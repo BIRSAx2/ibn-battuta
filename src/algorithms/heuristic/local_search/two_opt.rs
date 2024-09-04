@@ -1,8 +1,7 @@
 use crate::algorithms::{Solution, TspSolver};
-use tspf::Tsp;
-
-pub struct TwoOpt<'a> {
-    tsp: &'a Tsp,
+use crate::parser::Tsp;
+pub struct TwoOpt {
+    tsp: Box<Tsp>,
     tour: Vec<usize>,
     cost: f64,
     verbose: bool,
@@ -10,18 +9,19 @@ pub struct TwoOpt<'a> {
 }
 
 
-impl<'a> TwoOpt<'a> {
-    pub fn new(tsp: &Tsp) -> TwoOpt {
+impl TwoOpt {
+    pub fn new(tsp: Box<Tsp>) -> TwoOpt {
+        let base_tour = (0..tsp.dim()).collect();
         TwoOpt {
             tsp,
             tour: vec![],
             cost: 0.0,
             verbose: false,
-            base_tour: tsp.node_coords().iter().map(|node| *node.0).collect(),
+            base_tour: base_tour,
         }
     }
 
-    pub fn from(tsp: &Tsp, base_tour: Vec<usize>, verbose: bool) -> TwoOpt {
+    pub fn from(tsp: Box<Tsp>, base_tour: Vec<usize>, verbose: bool) -> TwoOpt {
         TwoOpt {
             tsp,
             tour: vec![],
@@ -82,7 +82,7 @@ impl<'a> TwoOpt<'a> {
     }
 }
 
-impl TspSolver for TwoOpt<'_> {
+impl TspSolver for TwoOpt {
     fn solve(&mut self) -> Solution {
         self.tour = self.base_tour.clone();
         self.cost = self.calculate_tour_cost();
@@ -105,6 +105,10 @@ impl TspSolver for TwoOpt<'_> {
 
     fn cost(&self, from: usize, to: usize) -> f64 {
         self.tsp.weight(from, to)
+    }
+
+    fn format_name(&self) -> String {
+        format!("2Opt")
     }
 }
 #[cfg(test)]
@@ -133,9 +137,9 @@ mod tests {
         ";
         let tsp = TspBuilder::parse_str(data).unwrap();
 
-        let mut nn = NearestNeighbor::new(&tsp);
+        let mut nn = NearestNeighbor::new(Box::new(tsp));
         let base_tour = nn.solve().tour;
-        let mut solver = TwoOpt::from(&tsp, base_tour, false);
+        let mut solver = TwoOpt::from(Box::new(TspBuilder::parse_str(data).unwrap()), base_tour, false);
         let solution = solver.solve();
 
         println!("{:?}", solution);
@@ -149,9 +153,9 @@ mod tests {
         let tsp = TspBuilder::parse_path(path).unwrap();
 
         let size = tsp.dim();
-        let mut nn = NearestNeighbor::new(&tsp);
+        let mut nn = NearestNeighbor::new(Box::new(tsp));
         let base_tour = nn.solve().tour;
-        let mut solver = TwoOpt::from(&tsp, base_tour, false);
+        let mut solver = TwoOpt::from(Box::new(TspBuilder::parse_path(path).unwrap()), base_tour, false);
         let solution = solver.solve();
 
         println!("{:?}", solution);

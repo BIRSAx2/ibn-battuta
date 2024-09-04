@@ -1,5 +1,5 @@
 use crate::algorithms::{Solution, TspSolver};
-use tspf::Tsp;
+use crate::Tsp;
 
 pub struct BranchAndBound<'a> {
     tsp: &'a Tsp,

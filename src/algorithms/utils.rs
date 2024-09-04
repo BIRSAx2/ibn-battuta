@@ -1,7 +1,7 @@
+use std::fmt::{Display, Formatter};
 use std::time::Duration;
-use tspf::Tsp;
-
-#[derive(Clone, Debug, PartialEq)]
+use crate::parser::Tsp;
+#[derive(Clone, Debug, PartialEq, Copy)]
 pub enum Solver {
     BruteForce,
     BranchAndBound,
@@ -15,6 +15,25 @@ pub enum Solver {
     AntColonyOptimization,
     AntColonySystem,
     RedBlackAntColonySystem,
+}
+
+impl Display for Solver {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Solver::BruteForce => write!(f, "BruteForce"),
+            Solver::BranchAndBound => write!(f, "BranchAndBound"),
+            Solver::NearestNeighbor => write!(f, "NearestNeighbor"),
+            Solver::TwoOpt => write!(f, "TwoOpt"),
+            Solver::ThreeOpt => write!(f, "ThreeOpt"),
+            Solver::Greedy => write!(f, "Greedy"),
+            Solver::LinKernighan => write!(f, "LinKernighan"),
+            Solver::SimulatedAnnealing => write!(f, "SimulatedAnnealing"),
+            Solver::GeneticAlgorithm => write!(f, "GeneticAlgorithm"),
+            Solver::AntColonyOptimization => write!(f, "AntColonyOptimization"),
+            Solver::AntColonySystem => write!(f, "AntColonySystem"),
+            Solver::RedBlackAntColonySystem => write!(f, "RedBlackAntColonySystem"),
+        }
+    }
 }
 
 

@@ -1,8 +1,7 @@
 use crate::algorithms::{Solution, TspSolver};
 use rand::prelude::*;
 use std::f64;
-use tspf::Tsp;
-
+use crate::parser::Tsp;
 pub struct AntColonySystem<'a> {
     tsp: &'a Tsp,
     pheromones: Vec<Vec<f64>>,

@@ -1,12 +1,11 @@
 pub mod exact;
 pub mod heuristic;
 pub mod metaheuristic;
-mod utils;
+pub mod utils;
 
 pub use exact::*;
 pub use heuristic::*;
 pub use metaheuristic::*;
-
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Solution {
@@ -44,5 +43,15 @@ pub trait TspSolver {
             total_cost += self.cost(from, to);
         }
         total_cost
+    }
+
+    fn format_name(&self) -> String {
+        format!("{}", "TspSolver")
+    }
+}
+
+impl std::fmt::Display for dyn TspSolver {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "{}", self.format_name())
     }
 }

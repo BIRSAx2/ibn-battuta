@@ -1,17 +1,16 @@
 use crate::algorithms::{Solution, TspSolver};
 use std::f64;
-use tspf::Tsp;
+use crate::Tsp;
 
-
-pub struct NearestNeighbor<'a> {
-    tsp: &'a Tsp,
+pub struct NearestNeighbor {
+    tsp: Box<Tsp>,
     visited: Vec<bool>,
     tour: Vec<usize>,
     cost: f64,
 }
 
-impl<'a> NearestNeighbor<'a> {
-    pub fn new(tsp: &'a Tsp) -> Self {
+impl NearestNeighbor {
+    pub fn new(tsp: Box<Tsp>) -> Self {
         let n = tsp.dim();
         NearestNeighbor {
             tsp,
@@ -23,7 +22,7 @@ impl<'a> NearestNeighbor<'a> {
 }
 
 
-impl TspSolver for NearestNeighbor<'_> {
+impl TspSolver for NearestNeighbor {
     fn solve(&mut self) -> Solution {
         let n = self.tsp.dim();
         let mut current_city = 0;
@@ -67,6 +66,10 @@ impl TspSolver for NearestNeighbor<'_> {
     fn cost(&self, from: usize, to: usize) -> f64 {
         self.tsp.weight(from, to)
     }
+
+    fn format_name(&self) -> String {
+        return "NN".to_string();
+    }
 }
 
 
@@ -95,7 +98,7 @@ mod tests {
         ";
         let tsp = TspBuilder::parse_str(data).unwrap();
 
-        let mut solver = NearestNeighbor::new(&tsp);
+        let mut solver = NearestNeighbor::new(Box::new(tsp));
         let solution = solver.solve();
 
         println!("{:?}", solution);
@@ -110,7 +113,8 @@ mod tests {
 
         let size = tsp.dim();
 
-        let mut solver = NearestNeighbor::new(&tsp);
+        let mut solver = NearestNeighbor::new(Box::new(tsp));
+
         let solution = solver.solve();
 
         println!("{:?}", solution);

@@ -1,6 +1,6 @@
 use crate::algorithms::{Solution, TspSolver};
 use std::f64;
-use tspf::Tsp;
+use crate::Tsp;
 
 pub struct BellmanHeldKarp {
     tsp: Tsp,

@@ -1,17 +1,16 @@
 use crate::algorithms::{Solution, TspSolver};
 use std::f64;
-use tspf::Tsp;
-
-pub struct Greedy<'a> {
-    tsp: &'a Tsp,
+use crate::Tsp;
+pub struct Greedy {
+    tsp: Box<Tsp>,
     visited: Vec<bool>,
     tour: Vec<usize>,
     cost: f64,
 }
 
 
-impl<'a> Greedy<'a> {
-    pub fn new(tsp: &'a Tsp) -> Self {
+impl Greedy {
+    pub fn new(tsp: Box<Tsp>) -> Self {
         let n = tsp.dim();
         Greedy {
             tsp,
@@ -22,7 +21,7 @@ impl<'a> Greedy<'a> {
     }
 }
 
-impl TspSolver for Greedy<'_> {
+impl TspSolver for Greedy {
     fn solve(&mut self) -> Solution {
         let n = self.tsp.dim();
         let dist = |i: usize, j: usize| self.tsp.weight(i, j);
@@ -88,7 +87,7 @@ mod tests {
         ";
         let tsp = TspBuilder::parse_str(data).unwrap();
 
-        let mut solver = Greedy::new(&tsp);
+        let mut solver = Greedy::new(Box::new(tsp));
         let solution = solver.solve();
 
         println!("{:?}", solution);
@@ -103,7 +102,8 @@ mod tests {
 
         let size = tsp.dim();
 
-        let mut solver = Greedy::new(&tsp);
+        let mut solver = Greedy::new(Box::new(tsp));
+
         let solution = solver.solve();
 
         println!("{:?}", solution);

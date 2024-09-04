@@ -10,10 +10,11 @@ getset = "0.1.2"
 approx = "0.5.1"
 rand = "0.8.5"
 log = "0.4.20"
-tspf = "0.3.1"
 
 [dev-dependencies]
 criterion = "0.5.1"
+approx = "0.5.0"
+
 
 [[bench]]
 name = "benchmarks"

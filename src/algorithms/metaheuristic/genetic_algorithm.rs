@@ -1,10 +1,9 @@
 use crate::algorithms::{Solution, TspSolver};
 use rand::prelude::*;
 use std::f64;
-use tspf::Tsp;
-
-pub struct GeneticAlgorithm<'a> {
-    tsp: &'a Tsp,
+use crate::parser::Tsp;
+pub struct GeneticAlgorithm{
+    tsp: Box<Tsp>,
     population: Vec<Vec<usize>>,
     best_tour: Vec<usize>,
     best_cost: f64,
@@ -14,14 +13,14 @@ pub struct GeneticAlgorithm<'a> {
     max_generations: usize,
 }
 
-impl<'a> GeneticAlgorithm<'a> {
+impl GeneticAlgorithm{
     pub fn with_options(
-        tsp: &'a Tsp,
+        tsp: Box<Tsp>,
         population_size: usize,
         tournament_size: usize,
         mutation_rate: f64,
         max_generations: usize,
-    ) -> GeneticAlgorithm<'a> {
+    ) -> GeneticAlgorithm {
         let population_size = population_size.max(2);  // Ensure at least 2 individuals
         let tournament_size = tournament_size.min(population_size);  // Ensure tournament size doesn't exceed population size
 
@@ -128,7 +127,7 @@ impl<'a> GeneticAlgorithm<'a> {
     }
 }
 
-impl TspSolver for GeneticAlgorithm<'_> {
+impl TspSolver for GeneticAlgorithm {
     fn solve(&mut self) -> Solution {
         for _ in 0..self.max_generations {
             self.evolve_population();
@@ -176,7 +175,7 @@ mod tests {
         ";
         let tsp = TspBuilder::parse_str(data).unwrap();
 
-        let mut solver = GeneticAlgorithm::with_options(&tsp, 100, 5, 0.01, 1000);
+        let mut solver = GeneticAlgorithm::with_options(Box::new(tsp), 100, 5, 0.01, 1000);
         let solution = solver.solve();
 
         println!("Example solution: {:?}", solution);
@@ -188,7 +187,7 @@ mod tests {
         let path = "data/tsplib/gr17.tsp";
         let tsp = TspBuilder::parse_path(path).unwrap();
 
-        let mut solver = GeneticAlgorithm::with_options(&tsp, 100, 5, 0.01, 1000);
+        let mut solver = GeneticAlgorithm::with_options(Box::new(tsp), 100, 5, 0.01, 1000);
         let solution = solver.solve();
 
         println!("GR17 solution: {:?}", solution);
@@ -264,7 +263,7 @@ mod tests {
     ) -> BenchmarkResult {
         let start = Instant::now();
         let mut solver = GeneticAlgorithm::with_options(
-            &instance.tsp,
+            Box::new(*instance.tsp),
             population_size,
             tournament_size,
             mutation_rate,

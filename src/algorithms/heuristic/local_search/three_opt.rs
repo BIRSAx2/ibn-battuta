@@ -1,5 +1,4 @@
-use tspf::Tsp;
-
+use crate::parser::Tsp;
 use crate::algorithms::{Solution, TspSolver};
 
 

@@ -1,5 +1,5 @@
 use crate::algorithms::{Solution, TspSolver};
-use tspf::Tsp;
+use crate::parser::Tsp;
 
 
 pub struct BruteForce<'a> {
@@ -60,7 +60,7 @@ impl<'a> BruteForce<'a> {
 mod tests {
     use crate::algorithms::exact::brute_force::BruteForce;
     use crate::algorithms::TspSolver;
-    use tspf::TspBuilder;
+    use crate::TspBuilder;
 
     #[test]
     fn test() {

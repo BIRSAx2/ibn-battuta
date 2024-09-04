@@ -1,7 +1,6 @@
 use crate::algorithms::{Solution, TspSolver};
 use std::f64;
-use tspf::Tsp;
-
+use crate::parser::Tsp;
 use rand::prelude::*;
 
 pub struct LinKernighan<'a> {
