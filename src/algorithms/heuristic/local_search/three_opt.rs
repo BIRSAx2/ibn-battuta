@@ -160,7 +160,7 @@ impl TspSolver for ThreeOpt<'_> {
 mod tests {
     use super::*;
     use crate::algorithms::TspSolver;
-    use tspf::TspBuilder;
+    use crate::TspBuilder;
 
     #[test]
     fn test_three_opt() {

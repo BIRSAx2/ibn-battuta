@@ -152,7 +152,7 @@ impl TspSolver for AntSystem<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tspf::TspBuilder;
+    use crate::TspBuilder;
 
     #[test]
     fn test_example() {

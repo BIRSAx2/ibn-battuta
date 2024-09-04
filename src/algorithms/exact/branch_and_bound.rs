@@ -71,7 +71,7 @@ impl TspSolver for BranchAndBound<'_> {
 mod tests {
     use crate::algorithms::exact::branch_and_bound::BranchAndBound;
     use crate::algorithms::TspSolver;
-    use tspf::TspBuilder;
+    use crate::TspBuilder;
 
     #[test]
     fn test() {

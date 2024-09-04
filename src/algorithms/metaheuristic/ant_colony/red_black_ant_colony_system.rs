@@ -1,9 +1,9 @@
 use crate::algorithms::{Solution, TspSolver};
+use crate::parser::Tsp;
 use rand::prelude::*;
 use std::f64;
-use crate::parser::Tsp;
-pub struct RedBlackACS<'a> {
-    tsp: &'a Tsp,
+pub struct RedBlackACS {
+    tsp: Tsp,
     pheromones: Vec<Vec<f64>>,
     heuristic: Vec<Vec<f64>>,
     best_tour: Vec<usize>,
@@ -14,28 +14,19 @@ pub struct RedBlackACS<'a> {
     tau0: f64,
     q0: f64,
     num_ants: usize,
-    num_red_ants: usize,
-    num_black_ants: usize,
-    evaporation_rate: f64,
     max_iterations: usize,
-    elitism: f64,
 }
 
-impl<'a> RedBlackACS<'a> {
-    pub fn with_options(tsp: &'a Tsp, alpha: f64,
+impl RedBlackACS {
+    pub fn with_options(tsp: Tsp, alpha: f64,
                         beta: f64,
                         rho: f64,
                         tau0: f64,
                         q0: f64,
                         num_ants: usize,
-                        num_red_ants: usize,
-                        num_black_ants: usize,
-                        evaporation_rate: f64,
-                        max_iterations: usize,
-                        elitism: f64, base_tour_length: f64) -> RedBlackACS<'a> {
+                        max_iterations: usize) -> RedBlackACS {
         let dim = tsp.dim();
-        let initial_pheromone = 1.0 / (dim as f64 * base_tour_length as f64);
-        let pheromones = vec![vec![initial_pheromone; dim]; dim];
+        let pheromones = vec![vec![tau0; dim]; dim];
         let heuristic = vec![vec![0.0; dim]; dim];
 
         let mut rb_acs = RedBlackACS {
@@ -53,11 +44,7 @@ impl<'a> RedBlackACS<'a> {
             tau0,
             q0,
             num_ants,
-            num_red_ants,
-            num_black_ants,
-            evaporation_rate,
             max_iterations,
-            elitism,
         };
 
         rb_acs.initialize_heuristic();
@@ -174,11 +161,11 @@ impl<'a> RedBlackACS<'a> {
     }
 }
 
-impl TspSolver for RedBlackACS<'_> {
+impl TspSolver for RedBlackACS {
     fn solve(&mut self) -> Solution {
         for _ in 0..self.max_iterations {
-            for ant in 0..self.num_ants {
-                let is_red = ant < self.num_red_ants;
+            for ant in 0..self.num_ants * 2 {
+                let is_red = ant < self.num_ants;
                 let solution = self.construct_solution(is_red);
                 self.update_best_solution(&solution);
             }
@@ -206,7 +193,7 @@ mod tests {
     use super::*;
     use crate::algorithms::heuristic::nearest_neighbor::NearestNeighbor;
     use crate::algorithms::TspSolver;
-    use tspf::TspBuilder;
+    use crate::TspBuilder;
 
     #[test]
     fn test_example() {
@@ -227,32 +214,49 @@ mod tests {
         ";
         let tsp = TspBuilder::parse_str(data).unwrap();
 
-        let mut nn = NearestNeighbor::new(&tsp);
-        let base_tour_length = nn.solve().total;
-
-        let mut solver = RedBlackACS::with_options(&tsp, 1.0, 2.0, 0.1, 1.0, 0.9, 10, 5, 5, 0.1, 100, 0.1, base_tour_length);
+        let mut nn = NearestNeighbor::new(tsp.clone());
+        let base_tour = nn.solve().total;
+        let n = tsp.dim();
+        let tau0 = 1.0 / (n as f64 * base_tour as f64);
+        let mut solver = RedBlackACS::with_options(tsp, 1.0, 2.0, 0.1, tau0, 0.9, 20, 1000);
         let solution = solver.solve();
 
         println!("{:?}", solution);
     }
 
 
-    #[test]
-
-    fn test_gr17() {
-        let path = "data/tsplib/gr17.tsp";
-        let tsp = TspBuilder::parse_path(path).unwrap();
-
+    fn test_instance(tsp: Tsp) {
         let size = tsp.dim();
 
-
-        let mut nn = NearestNeighbor::new(&tsp);
-        let base_tour_length = nn.solve().total;
-
-        let mut solver = RedBlackACS::with_options(&tsp, 1.0, 2.0, 0.1, 1.0, 0.9, 10, 5, 5, 0.1, 100, 0.1, base_tour_length);
+        let mut nn = NearestNeighbor::new(tsp.clone());
+        let base_tour = nn.solve().total;
+        let n = tsp.dim();
+        let tau0 = 1.0 / (n as f64 * base_tour as f64);
+        let mut solver = RedBlackACS::with_options(tsp, 1.0, 2.0, 0.1, tau0, 0.9, 20, 1000);
         let solution = solver.solve();
 
         println!("{:?}", solution);
         assert_eq!(solution.tour.len(), size);
+    }
+
+    #[test]
+    fn test_gr17() {
+        let path = "data/tsplib/gr17.tsp";
+        let tsp = TspBuilder::parse_path(path).unwrap();
+        test_instance(tsp);
+    }
+
+    #[test]
+    fn test_gr21() {
+        let path = "data/tsplib/gr21.tsp";
+        let tsp = TspBuilder::parse_path(path).unwrap();
+        test_instance(tsp);
+    }
+
+    #[test]
+    fn test_gr666() {
+        let path = "data/tsplib/gr666.tsp";
+        let tsp = TspBuilder::parse_path(path).unwrap();
+        test_instance(tsp);
     }
 }

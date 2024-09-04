@@ -66,7 +66,7 @@ impl TspSolver for Greedy {
 mod tests {
     use super::*;
     use crate::algorithms::TspSolver;
-    use tspf::TspBuilder;
+    use crate::TspBuilder;
 
     #[test]
     fn test_greedy() {

@@ -1,16 +1,16 @@
 use crate::algorithms::{Solution, TspSolver};
-use std::f64;
 use crate::Tsp;
+use std::f64;
 
 pub struct NearestNeighbor {
-    tsp: Box<Tsp>,
+    tsp: Tsp,
     visited: Vec<bool>,
     tour: Vec<usize>,
     cost: f64,
 }
 
 impl NearestNeighbor {
-    pub fn new(tsp: Box<Tsp>) -> Self {
+    pub fn new(tsp: Tsp) -> Self {
         let n = tsp.dim();
         NearestNeighbor {
             tsp,
@@ -77,7 +77,7 @@ impl TspSolver for NearestNeighbor {
 mod tests {
     use super::*;
     use crate::algorithms::TspSolver;
-    use tspf::TspBuilder;
+    use crate::TspBuilder;
 
     #[test]
     fn test_nearest_neighbor() {
@@ -98,7 +98,7 @@ mod tests {
         ";
         let tsp = TspBuilder::parse_str(data).unwrap();
 
-        let mut solver = NearestNeighbor::new(Box::new(tsp));
+        let mut solver = NearestNeighbor::new(tsp);
         let solution = solver.solve();
 
         println!("{:?}", solution);
@@ -113,7 +113,7 @@ mod tests {
 
         let size = tsp.dim();
 
-        let mut solver = NearestNeighbor::new(Box::new(tsp));
+        let mut solver = NearestNeighbor::new(tsp);
 
         let solution = solver.solve();
 

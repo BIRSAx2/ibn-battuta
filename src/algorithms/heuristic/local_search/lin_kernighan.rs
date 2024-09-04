@@ -1,10 +1,10 @@
 use crate::algorithms::{Solution, TspSolver};
-use std::f64;
 use crate::parser::Tsp;
 use rand::prelude::*;
+use std::f64;
 
-pub struct LinKernighan<'a> {
-    tsp: &'a Tsp,
+pub struct LinKernighan {
+    tsp: Tsp,
     tour: Vec<usize>,
     cost: f64,
     verbose: bool,
@@ -12,8 +12,8 @@ pub struct LinKernighan<'a> {
 }
 
 // TODO: Add verbose output
-impl<'a> LinKernighan<'a> {
-    pub fn new(tsp: &'a Tsp) -> LinKernighan<'a> {
+impl LinKernighan {
+    pub fn new(tsp: Tsp) -> LinKernighan {
         let mut result = LinKernighan {
             tsp,
             tour: vec![],
@@ -27,7 +27,7 @@ impl<'a> LinKernighan<'a> {
         result
     }
 
-    pub fn with_options(tsp: &'a Tsp, base_tour: Vec<usize>, verbose: bool, max_iterations: usize) -> LinKernighan<'a> {
+    pub fn with_options(tsp: Tsp, base_tour: Vec<usize>, verbose: bool, max_iterations: usize) -> LinKernighan {
         LinKernighan {
             tsp,
             tour: base_tour.clone(),
@@ -133,7 +133,7 @@ impl<'a> LinKernighan<'a> {
     }
 }
 
-impl TspSolver for LinKernighan<'_> {
+impl TspSolver for LinKernighan {
     fn solve(&mut self) -> Solution {
         let mut iterations = 0;
         while iterations < self.max_iterations {
@@ -163,7 +163,7 @@ mod tests {
     use super::*;
     use crate::algorithms::heuristic::nearest_neighbor::NearestNeighbor;
     use crate::algorithms::TspSolver;
-    use tspf::TspBuilder;
+    use crate::TspBuilder;
 
     #[test]
     fn test_example() {
@@ -183,9 +183,9 @@ mod tests {
         EOF
         ";
         let tsp = TspBuilder::parse_str(data).unwrap();
-        let mut nn = NearestNeighbor::new(&tsp);
+        let mut nn = NearestNeighbor::new(tsp.clone());
         let base_tour = nn.solve().tour;
-        let mut solver = LinKernighan::with_options(&tsp, base_tour, false, 1000);
+        let mut solver = LinKernighan::with_options(tsp, base_tour, false, 1000);
 
         let solution = solver.solve();
 
@@ -200,9 +200,9 @@ mod tests {
         let tsp = TspBuilder::parse_path(path).unwrap();
 
         let size = tsp.dim();
-        let mut nn = NearestNeighbor::new(&tsp);
+        let mut nn = NearestNeighbor::new(tsp.clone());
         let base_tour = nn.solve().tour;
-        let mut solver = LinKernighan::with_options(&tsp, base_tour, false, 1000);
+        let mut solver = LinKernighan::with_options(tsp, base_tour, false, 1000);
         let solution = solver.solve();
         println!("{:?}", solution);
         assert_eq!(solution.tour.len(), size);

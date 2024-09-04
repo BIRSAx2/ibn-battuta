@@ -1,11 +1,12 @@
 use ibn_battuta::algorithms::utils::Solver;
-use ibn_battuta::algorithms::{GeneticAlgorithm, NearestNeighbor, TspSolver, TwoOpt};
+use ibn_battuta::algorithms::*;
+use ibn_battuta::parser::TspBuilder;
 use std::fs::File;
 use std::io::Write;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
-use ibn_battuta::parser::TspBuilder;
+
 // Define a struct to hold TSP instance data
 #[derive(Clone, Debug)]
 pub struct TspInstance {
@@ -37,12 +38,11 @@ fn run_parallel_benchmarks(
     for instance in instances.iter() {
         let instance = instance.clone();
         let results = Arc::clone(&results);
-        let algorithm = Box::new(algorithm);
-        let params = Arc::new(params.clone());
         let instances = Arc::clone(&instances);
+        let params = params.clone();
         let handle = thread::spawn(move || {
-            let result = run_benchmark_multiple(&instance, algorithm, params, 10);
-            println!("Completed benchmark for instance: {}", instance.path);
+            let result = run_benchmark_multiple(&instance, algorithm.clone(), params.clone(), 5);
+            println!("Benchmarking for instance: {}", instance.path);
             results.lock().unwrap().push(result);
         });
         handles.push(handle);
@@ -95,18 +95,18 @@ fn run_parallel_grid_search(
 }
 
 
-fn benchmark(solver: Solver) {
+fn benchmark(solver: Solver, params: Vec<f64>) {
     let instances_names = vec![
-        ("gr17", 2085),
-        ("gr21", 2707),
-        ("gr24", 1272),
-        ("bier127", 118282),
-        ("gr48", 5046),
-        ("brazil58", 25395),
-        ("gr120", 6942),
-        ("gr137", 69853),
-        ("gr202", 40160),
-        ("gr666", 294358),
+        ("gr17", 2085f64),
+        ("gr21", 2707f64),
+        ("kroA100", 21285.45),
+        ("bier127", 118282.0),
+        ("gr48", 5046.0),
+        ("brazil58", 25395.0),
+        ("gr120", 6942.0),
+        ("gr137", 69853.0),
+        ("gr202", 40160.0),
+        ("gr666", 294358.0),
     ];
     // Define TSP instances
     let instances: Vec<TspInstance> = instances_names
@@ -115,8 +115,6 @@ fn benchmark(solver: Solver) {
             path: format!("data/tsplib/{}.tsp", name),
             best_known: *best_known as f64,
         }).collect();
-
-    let params: [f64; 4] = [100 as f64, 5 as f64, 0.01, 500 as f64];
 
     // Benchmark on different instances in parallel
     println!("Benchmarking on different instances:");
@@ -148,10 +146,9 @@ fn benchmark(solver: Solver) {
 }
 
 
-fn build_solver<'a>(instance: String, algorithm: &Box<Solver>, params: &Vec<f64>) -> Box<dyn TspSolver + 'a> {
+fn build_solver<'a>(instance: String, algorithm: Solver, params: &Vec<f64>) -> Box<dyn TspSolver + 'a> {
     let tsp = TspBuilder::parse_path(&instance).unwrap();
-    let tsp = Box::new(tsp);
-    match algorithm.as_ref() {
+    match algorithm {
         Solver::GeneticAlgorithm => {
             let population_size = params[0] as usize;
             let tournament_size = params[1] as usize;
@@ -163,19 +160,60 @@ fn build_solver<'a>(instance: String, algorithm: &Box<Solver>, params: &Vec<f64>
             Box::new(NearestNeighbor::new(tsp))
         }
         Solver::TwoOpt => {
-            let mut nn = NearestNeighbor::new(tsp);
+            let mut nn = NearestNeighbor::new(tsp.clone());
             let base_tour = nn.solve().tour;
 
 
             Box::new(TwoOpt::from(tsp, base_tour, false))
+        }
+        Solver::LinKernighan => {
+            let mut nn = NearestNeighbor::new(tsp.clone());
+            let base_tour = nn.solve().tour;
+
+            Box::new(LinKernighan::with_options(tsp, base_tour, true, 1000))
+        }
+        Solver::SimulatedAnnealing => {
+            let initial_temperature = params[0];
+            let cooling_rate = params[1];
+            let min_temperature = params[2];
+            let max_iterations = params[3] as usize;
+            Box::new(SimulatedAnnealing::with_options(tsp, initial_temperature, cooling_rate, min_temperature, max_iterations))
+        }
+        Solver::AntColonySystem => {
+            let mut nn = NearestNeighbor::new(tsp.clone());
+            let base_tour = nn.solve().total;
+            let n = tsp.dim();
+            let tau0 = 1.0 / (n as f64 * base_tour as f64);
+
+            let alpha = params[0];
+            let beta = params[1];
+            let rho = params[2];
+            let q0 = params[3];
+            let num_ants = params[4] as usize;
+            let max_iterations = params[5] as usize;
+            Box::new(AntColonySystem::with_options(tsp, alpha, beta, rho, tau0, q0, num_ants, max_iterations))
+        }
+        Solver::RedBlackAntColonySystem => {
+            let mut nn = NearestNeighbor::new(tsp.clone());
+            let base_tour = nn.solve().total;
+            let n = tsp.dim();
+            let tau0 = 1.0 / (n as f64 * base_tour as f64);
+
+            let alpha = params[0];
+            let beta = params[1];
+            let rho = params[2];
+            let q0 = params[3];
+            let num_ants = params[4] as usize;
+            let max_iterations = params[5] as usize;
+            Box::new(RedBlackACS::with_options(tsp, alpha, beta, rho, tau0, q0, num_ants, max_iterations))
         }
         _ => unimplemented!(),
     }
 }
 fn run_benchmark_multiple(
     instance: &TspInstance,
-    algorithm: Box<Solver>,
-    params: Arc<Vec<f64>>,
+    algorithm: Solver,
+    params: Vec<f64>,
     num_runs: usize,
 ) -> BenchmarkResult {
     let mut best_result = None;
@@ -186,7 +224,7 @@ fn run_benchmark_multiple(
         let start = Instant::now();
         let tsp = Arc::new(TspBuilder::parse_path(&instance.path).unwrap());
         let mut solver = {
-            build_solver(instance.path.clone(), &algorithm, &params)
+            build_solver(instance.path.clone(), algorithm, &params)
         };
         let solution = solver.solve();
         let duration = start.elapsed();
@@ -223,7 +261,7 @@ fn run_benchmark(
     max_generations: usize,
 ) -> BenchmarkResult {
     let start = Instant::now();
-    let tsp = Box::new(TspBuilder::parse_path(&instance.path).unwrap());
+    let tsp = TspBuilder::parse_path(&instance.path).unwrap();
     let mut solver = GeneticAlgorithm::with_options(
         tsp,
         population_size,
@@ -287,6 +325,9 @@ fn save_results_to_csv(results: &[BenchmarkResult], filename: &str) {
 }
 
 fn main() {
-    benchmark(Solver::NearestNeighbor);
-    benchmark(Solver::TwoOpt);
+    benchmark(Solver::NearestNeighbor, vec![]);
+    benchmark(Solver::GeneticAlgorithm, [100 as f64, 5 as f64, 0.01, 500 as f64].into());
+    benchmark(Solver::SimulatedAnnealing, [1000.0, 0.96, 0.005, 66000 as f64].into());
+    benchmark(Solver::AntColonySystem, [0.1, 2.0, 0.1, 0.9, 10.0, 1000.0].into());
+    benchmark(Solver::RedBlackAntColonySystem, [1.0, 2.0, 0.1, 0.9, 20.0, 1000.0].into());
 }

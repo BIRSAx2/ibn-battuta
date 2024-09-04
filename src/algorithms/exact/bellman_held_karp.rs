@@ -106,7 +106,7 @@ impl TspSolver for BellmanHeldKarp {
 mod tests {
     use crate::algorithms::exact::bellman_held_karp::BellmanHeldKarp;
     use crate::algorithms::TspSolver;
-    use tspf::TspBuilder;
+    use crate::TspBuilder;
 
     #[test]
     fn test() {

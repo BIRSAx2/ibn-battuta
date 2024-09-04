@@ -1,9 +1,11 @@
 use crate::algorithms::{Solution, TspSolver};
+use crate::parser::Tsp;
 use rand::prelude::*;
 use std::f64;
-use crate::parser::Tsp;
-pub struct SimulatedAnnealing<'a> {
-    tsp: &'a Tsp,
+
+// TODO: Check this implementation, the results diverge from the expected
+pub struct SimulatedAnnealing {
+    tsp: Tsp,
     tour: Vec<usize>,
     cost: f64,
     initial_temperature: f64,
@@ -12,12 +14,12 @@ pub struct SimulatedAnnealing<'a> {
     max_iterations: usize,
 }
 
-impl<'a> SimulatedAnnealing<'a> {
-    pub fn with_options(tsp: &'a Tsp, initial_temperature: f64,
+impl SimulatedAnnealing {
+    pub fn with_options(tsp: Tsp, initial_temperature: f64,
                         cooling_rate: f64,
                         min_temperature: f64,
                         max_iterations: usize,
-    ) -> SimulatedAnnealing<'a> {
+    ) -> SimulatedAnnealing {
         SimulatedAnnealing {
             tsp,
             tour: vec![],
@@ -74,7 +76,7 @@ impl<'a> SimulatedAnnealing<'a> {
     }
 }
 
-impl TspSolver for SimulatedAnnealing<'_> {
+impl TspSolver for SimulatedAnnealing {
     fn solve(&mut self) -> Solution {
         let mut rng = rand::thread_rng();
         self.initial_solution();
@@ -129,8 +131,7 @@ impl TspSolver for SimulatedAnnealing<'_> {
 mod tests {
     use super::*;
     use crate::algorithms::TspSolver;
-    use tspf::TspBuilder;
-
+    use crate::TspBuilder;
 
     #[test]
     fn test_example() {
@@ -150,8 +151,7 @@ mod tests {
         EOF
         ";
         let tsp = TspBuilder::parse_str(data).unwrap();
-
-        let mut solver = SimulatedAnnealing::with_options(&tsp, 1000.0, 0.003, 0.0001, 1000);
+        let mut solver = SimulatedAnnealing::with_options(tsp.clone(), 100.0, 0.98, 1e-8, tsp.dim() * 100);
         let solution = solver.solve();
 
         println!("{:?}", solution);
@@ -165,7 +165,7 @@ mod tests {
         let tsp = TspBuilder::parse_path(path).unwrap();
 
         let size = tsp.dim();
-        let mut solver = SimulatedAnnealing::with_options(&tsp, 1000.0, 0.003, 0.0001, 1000);
+        let mut solver = SimulatedAnnealing::with_options(tsp, 1000.0, 0.003, 0.0001, 1000);
         let solution = solver.solve();
         println!("{:?}", solution);
         assert_eq!(solution.tour.len(), size);

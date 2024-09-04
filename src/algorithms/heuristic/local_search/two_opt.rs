@@ -1,7 +1,7 @@
 use crate::algorithms::{Solution, TspSolver};
 use crate::parser::Tsp;
 pub struct TwoOpt {
-    tsp: Box<Tsp>,
+    tsp: Tsp,
     tour: Vec<usize>,
     cost: f64,
     verbose: bool,
@@ -10,7 +10,7 @@ pub struct TwoOpt {
 
 
 impl TwoOpt {
-    pub fn new(tsp: Box<Tsp>) -> TwoOpt {
+    pub fn new(tsp: Tsp) -> TwoOpt {
         let base_tour = (0..tsp.dim()).collect();
         TwoOpt {
             tsp,
@@ -21,7 +21,7 @@ impl TwoOpt {
         }
     }
 
-    pub fn from(tsp: Box<Tsp>, base_tour: Vec<usize>, verbose: bool) -> TwoOpt {
+    pub fn from(tsp: Tsp, base_tour: Vec<usize>, verbose: bool) -> TwoOpt {
         TwoOpt {
             tsp,
             tour: vec![],
@@ -116,7 +116,7 @@ mod tests {
     use crate::algorithms::heuristic::local_search::two_opt::TwoOpt;
     use crate::algorithms::heuristic::nearest_neighbor::NearestNeighbor;
     use crate::algorithms::TspSolver;
-    use tspf::TspBuilder;
+    use crate::TspBuilder;
 
     #[test]
     fn test_two_opt() {
@@ -137,9 +137,9 @@ mod tests {
         ";
         let tsp = TspBuilder::parse_str(data).unwrap();
 
-        let mut nn = NearestNeighbor::new(Box::new(tsp));
+        let mut nn = NearestNeighbor::new(tsp.clone());
         let base_tour = nn.solve().tour;
-        let mut solver = TwoOpt::from(Box::new(TspBuilder::parse_str(data).unwrap()), base_tour, false);
+        let mut solver = TwoOpt::from(tsp, base_tour, false);
         let solution = solver.solve();
 
         println!("{:?}", solution);
@@ -153,9 +153,9 @@ mod tests {
         let tsp = TspBuilder::parse_path(path).unwrap();
 
         let size = tsp.dim();
-        let mut nn = NearestNeighbor::new(Box::new(tsp));
+        let mut nn = NearestNeighbor::new(tsp.clone());
         let base_tour = nn.solve().tour;
-        let mut solver = TwoOpt::from(Box::new(TspBuilder::parse_path(path).unwrap()), base_tour, false);
+        let mut solver = TwoOpt::from(tsp, base_tour, false);
         let solution = solver.solve();
 
         println!("{:?}", solution);

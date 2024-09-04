@@ -1,9 +1,9 @@
 use crate::algorithms::{Solution, TspSolver};
+use crate::parser::Tsp;
 use rand::prelude::*;
 use std::f64;
-use crate::parser::Tsp;
-pub struct GeneticAlgorithm{
-    tsp: Box<Tsp>,
+pub struct GeneticAlgorithm {
+    tsp: Tsp,
     population: Vec<Vec<usize>>,
     best_tour: Vec<usize>,
     best_cost: f64,
@@ -13,9 +13,9 @@ pub struct GeneticAlgorithm{
     max_generations: usize,
 }
 
-impl GeneticAlgorithm{
+impl GeneticAlgorithm {
     pub fn with_options(
-        tsp: Box<Tsp>,
+        tsp: Tsp,
         population_size: usize,
         tournament_size: usize,
         mutation_rate: f64,
@@ -152,9 +152,7 @@ impl TspSolver for GeneticAlgorithm {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::algorithms::utils::{BenchmarkResult, TspInstance};
-    use std::time::Instant;
-    use tspf::TspBuilder;
+    use crate::TspBuilder;
 
     #[test]
     fn test_example() {
@@ -174,126 +172,25 @@ mod tests {
         EOF
         ";
         let tsp = TspBuilder::parse_str(data).unwrap();
+        let dim = tsp.dim();
 
-        let mut solver = GeneticAlgorithm::with_options(Box::new(tsp), 100, 5, 0.01, 1000);
+        let mut solver = GeneticAlgorithm::with_options(tsp, 100, 5, 0.01, 1000);
         let solution = solver.solve();
 
         println!("Example solution: {:?}", solution);
-        assert_eq!(solution.tour.len(), tsp.dim());
+        assert_eq!(solution.tour.len(), dim);
     }
 
     #[test]
     fn test_gr17() {
         let path = "data/tsplib/gr17.tsp";
         let tsp = TspBuilder::parse_path(path).unwrap();
+        let m = tsp.dim();
 
-        let mut solver = GeneticAlgorithm::with_options(Box::new(tsp), 100, 5, 0.01, 1000);
+        let mut solver = GeneticAlgorithm::with_options(tsp, 100, 5, 0.01, 1000);
         let solution = solver.solve();
 
         println!("GR17 solution: {:?}", solution);
-        assert_eq!(solution.tour.len(), tsp.dim());
-    }
-
-    #[test]
-    fn benchmark() {
-        // Define TSP instances
-        let instances = vec![
-            TspInstance {
-                tsp: TspBuilder::parse_path("data/tsplib/gr17.tsp").unwrap(),
-                best_known: 2085.0,
-            },
-            TspInstance {
-                tsp: TspBuilder::parse_path("data/tsplib/gr24.tsp").unwrap(),
-                best_known: 2832.0,
-            },
-            // TspInstance {
-            //     tsp: TspBuilder::parse_path("data/tsplib/gr48.tsp").unwrap(),
-            //     best_known: 5046.0,
-            // },
-            // TspInstance {
-            //     tsp: TspBuilder::parse_path("data/tsplib/gr96.tsp").unwrap(),
-            //     best_known: 55209.0,
-            // },
-        ];
-
-        // Benchmark on different instances
-        println!("Benchmarking on different instances:");
-        for instance in &instances {
-            let result = run_benchmark(instance, 100, 5, 0.01, 500);
-            print_benchmark_result(&result);
-        }
-
-        // Grid search on gr24 instance
-        println!("\nGrid search on gr17 instance:");
-        let gr24 = &instances[0];
-        let population_sizes = vec![50, 100, 200];
-        let tournament_sizes = vec![3, 5, 10];
-        let mutation_rates = vec![0.005, 0.01, 0.02];
-        let max_generations = vec![100, 500, 1000];
-
-        let mut best_result = None;
-        let mut best_quality = f64::INFINITY;
-
-        for &pop_size in &population_sizes {
-            for &tourn_size in &tournament_sizes {
-                for &mut_rate in &mutation_rates {
-                    for &max_gen in &max_generations {
-                        let result = run_benchmark(gr24, pop_size, tourn_size, mut_rate, max_gen);
-                        if result.solution_quality < best_quality {
-                            best_quality = result.solution_quality;
-                            best_result = Some(result);
-                        }
-                    }
-                }
-            }
-        }
-
-        println!("Best configuration for gr24:");
-        if let Some(result) = best_result {
-            print_benchmark_result(&result);
-        }
-    }
-
-    fn run_benchmark(
-        instance: &TspInstance,
-        population_size: usize,
-        tournament_size: usize,
-        mutation_rate: f64,
-        max_generations: usize,
-    ) -> BenchmarkResult {
-        let start = Instant::now();
-        let mut solver = GeneticAlgorithm::with_options(
-            Box::new(*instance.tsp),
-            population_size,
-            tournament_size,
-            mutation_rate,
-            max_generations,
-        );
-        let solution = solver.solve();
-        let duration = start.elapsed();
-
-        BenchmarkResult {
-            instance_name: instance.tsp.name().to_string(),
-            algorithm_name: format!(
-                "GA (pop: {}, tourn: {}, mut: {:.3}, gen: {})",
-                population_size, tournament_size, mutation_rate, max_generations
-            ),
-            execution_time: duration,
-            total_cost: solution.total,
-            best_known: instance.best_known,
-            solution_quality: (solution.total - instance.best_known) / instance.best_known * 100.0,
-            solution: solution.tour,
-        }
-    }
-
-    fn print_benchmark_result(result: &BenchmarkResult) {
-        println!(
-            "Instance: {}, Algorithm: {}, Time: {:?}, Cost: {:.2}, Quality: {:.2}%",
-            result.instance_name,
-            result.algorithm_name,
-            result.execution_time,
-            result.total_cost,
-            result.solution_quality
-        );
+        assert_eq!(solution.tour.len(), m);
     }
 }
