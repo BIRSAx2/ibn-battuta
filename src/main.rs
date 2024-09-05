@@ -185,6 +185,7 @@ fn benchmark(solvers: &[Solver], params: &[Vec<f64>], num_threads: usize) {
         ("gr137", 69853.0),
         ("gr202", 40160.0),
         ("gr666", 294358.0),
+        ("pla7397", 23260728.0),
     ];
 
     let instances: Vec<TspInstance> = instances_names
