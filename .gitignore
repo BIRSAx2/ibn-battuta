@@ -170,4 +170,12 @@ rust-project.json
 # End of https://www.toptal.com/developers/gitignore/api/rust,rust-analyzer,intellij+all,intellij+iml
 
 *_search.csv
-*Benchmark.csv
+*Benchmark.csv# Devenv
+.devenv*
+devenv.local.nix
+
+# direnv
+.direnv
+
+# pre-commit
+.pre-commit-config.yaml
