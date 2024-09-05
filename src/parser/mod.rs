@@ -3,6 +3,7 @@
 //! The original [documentation](http://comopt.ifi.uni-heidelberg.de/software/TSPLIB95/) for TSPLIB
 //! can be found in the website of Ruprecht-Karls-Universität Heidelberg.
 
+#[allow(unused_attributes)]
 /// Macro for implementing trait Display for Enums.
 #[macro_use]
 macro_rules! impl_disp_enum {

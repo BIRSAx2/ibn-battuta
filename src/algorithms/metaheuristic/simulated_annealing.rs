@@ -3,7 +3,6 @@ use crate::parser::Tsp;
 use rand::prelude::*;
 use std::f64;
 
-// TODO: Check this implementation, the results diverge from the expected
 pub struct SimulatedAnnealing {
     tsp: Tsp,
     tour: Vec<usize>,
@@ -12,6 +11,7 @@ pub struct SimulatedAnnealing {
     cooling_rate: f64,
     min_temperature: f64,
     max_iterations: usize,
+    cycles_per_temperature: usize, // New parameter for cycles at each temperature
 }
 
 impl SimulatedAnnealing {
@@ -19,6 +19,7 @@ impl SimulatedAnnealing {
                         cooling_rate: f64,
                         min_temperature: f64,
                         max_iterations: usize,
+                        cycles_per_temperature: usize, // New parameter
     ) -> SimulatedAnnealing {
         SimulatedAnnealing {
             tsp,
@@ -28,6 +29,7 @@ impl SimulatedAnnealing {
             cooling_rate,
             min_temperature,
             max_iterations,
+            cycles_per_temperature, // Initialize new parameter
         }
     }
 
@@ -37,16 +39,6 @@ impl SimulatedAnnealing {
         self.tour.shuffle(&mut rng);
         self.cost = self.calculate_tour_cost(&self.tour);
     }
-
-    // fn calculate_tour_cost(&self) -> f64 {
-    //     let mut total_cost = 0.0;
-    //     for i in 0..self.tour.len() {
-    //         let from = self.tour[i];
-    //         let to = self.tour[(i + 1) % self.tour.len()];
-    //         total_cost += self.cost(from, to);
-    //     }
-    //     total_cost
-    // }
 
     fn calculate_tour_cost(&self, tour: &Vec<usize>) -> f64 {
         let mut total_cost = 0.0;
@@ -62,16 +54,20 @@ impl SimulatedAnnealing {
         let mut rng = rand::thread_rng();
         let mut new_tour = self.tour.clone();
         let i = rng.gen_range(0..new_tour.len());
-        let j = rng.gen_range(0..new_tour.len());
+        let mut j = rng.gen_range(0..new_tour.len());
+        while j == i {
+            j = rng.gen_range(0..new_tour.len());
+        }
         new_tour.swap(i, j);
         new_tour
     }
 
     fn acceptance_probability(old_cost: f64, new_cost: f64, temperature: f64) -> f64 {
-        if new_cost < old_cost {
+        let cost_difference = new_cost - old_cost;
+        if cost_difference < 0.0 {
             1.0
         } else {
-            f64::exp((old_cost - new_cost) / temperature)
+            f64::exp(-cost_difference / temperature)
         }
     }
 }
@@ -85,23 +81,24 @@ impl TspSolver for SimulatedAnnealing {
         let mut best_cost = self.cost;
 
         let mut temperature = self.initial_temperature;
-        let cooling_rate = self.cooling_rate;
 
         for _ in 0..self.max_iterations {
-            let new_tour = self.generate_neighbor();
-            let new_cost = self.calculate_tour_cost(&new_tour);
+            for _ in 0..self.cycles_per_temperature { // Loop for cycles at current temperature
+                let new_tour = self.generate_neighbor();
+                let new_cost = self.calculate_tour_cost(&new_tour);
 
-            if SimulatedAnnealing::acceptance_probability(self.cost, new_cost, temperature) > rng.gen() {
-                self.tour = new_tour;
-                self.cost = new_cost;
+                if SimulatedAnnealing::acceptance_probability(self.cost, new_cost, temperature) > rng.gen() {
+                    self.tour = new_tour;
+                    self.cost = new_cost;
+                }
+
+                if self.cost < best_cost {
+                    best_tour = self.tour.clone();
+                    best_cost = self.cost;
+                }
             }
 
-            if self.cost < best_cost {
-                best_tour = self.tour.clone();
-                best_cost = self.cost;
-            }
-
-            temperature *= 1.0 - cooling_rate;
+            temperature *= 1.0 - self.cooling_rate;
 
             if temperature < self.min_temperature {
                 break;
@@ -124,8 +121,11 @@ impl TspSolver for SimulatedAnnealing {
     fn cost(&self, from: usize, to: usize) -> f64 {
         self.tsp.weight(from, to)
     }
-}
 
+    fn format_name(&self) -> String {
+        format!("SimulatedAnnealing")
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -151,21 +151,19 @@ mod tests {
         EOF
         ";
         let tsp = TspBuilder::parse_str(data).unwrap();
-        let mut solver = SimulatedAnnealing::with_options(tsp.clone(), 100.0, 0.98, 1e-8, tsp.dim() * 100);
+        let mut solver = SimulatedAnnealing::with_options(tsp.clone(), 100.0, 0.98, 1e-8, tsp.dim() * 100, 10);
         let solution = solver.solve();
 
         println!("{:?}", solution);
     }
 
-
     #[test]
-
     fn test_gr17() {
         let path = "data/tsplib/gr17.tsp";
         let tsp = TspBuilder::parse_path(path).unwrap();
 
         let size = tsp.dim();
-        let mut solver = SimulatedAnnealing::with_options(tsp, 1000.0, 0.003, 0.0001, 1000);
+        let mut solver = SimulatedAnnealing::with_options(tsp, 1000.0, 0.003, 0.0001, 1000, 10);
         let solution = solver.solve();
         println!("{:?}", solution);
         assert_eq!(solution.tour.len(), size);

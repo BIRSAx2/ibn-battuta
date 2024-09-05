@@ -3,6 +3,7 @@ use crate::parser::Tsp;
 use rand::prelude::*;
 use std::f64;
 
+#[allow(dead_code)]
 pub struct LinKernighan {
     tsp: Tsp,
     tour: Vec<usize>,

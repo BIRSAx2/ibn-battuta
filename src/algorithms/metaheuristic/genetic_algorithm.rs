@@ -147,6 +147,10 @@ impl TspSolver for GeneticAlgorithm {
     fn cost(&self, from: usize, to: usize) -> f64 {
         self.tsp.weight(from, to)
     }
+
+    fn format_name(&self) -> String {
+        format!("GA")
+    }
 }
 
 #[cfg(test)]
@@ -185,12 +189,26 @@ mod tests {
     fn test_gr17() {
         let path = "data/tsplib/gr17.tsp";
         let tsp = TspBuilder::parse_path(path).unwrap();
+
+        run_on_instance(tsp);
+    }
+
+
+    #[test]
+    fn test_berlin52() {
+        let path = "data/tsplib/berlin52.tsp";
+        let tsp = TspBuilder::parse_path(path).unwrap();
+
+        run_on_instance(tsp);
+    }
+
+    fn run_on_instance(tsp: Tsp) {
         let m = tsp.dim();
 
         let mut solver = GeneticAlgorithm::with_options(tsp, 100, 5, 0.01, 1000);
         let solution = solver.solve();
 
-        println!("GR17 solution: {:?}", solution);
+        println!("Solution: {:?}", solution);
         assert_eq!(solution.tour.len(), m);
     }
 }

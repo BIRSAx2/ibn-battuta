@@ -1,7 +1,9 @@
 use crate::algorithms::{Solution, TspSolver};
 use crate::parser::Tsp;
+use crate::NearestNeighbor;
 use rand::prelude::*;
 use std::f64;
+
 pub struct AntColonySystem {
     tsp: Tsp,
     pheromones: Vec<Vec<f64>>,
@@ -16,22 +18,19 @@ pub struct AntColonySystem {
     tau0: f64,
     q0: f64,
     num_ants: usize,
-    // evaporation_rate: f64,
-    // elitism: f64,
     max_iterations: usize,
 }
 
 impl AntColonySystem {
-    pub fn with_options(tsp: Tsp, alpha: f64,
-                        beta: f64,
-                        rho: f64,
-                        tau0: f64,
-                        q0: f64,
-                        num_ants: usize,
-                        max_iterations: usize) -> AntColonySystem {
-        let dim = tsp.dim();
-        let pheromones = vec![vec![tau0; dim]; dim];
-        let heuristic = vec![vec![0.0; dim]; dim];
+    pub fn with_options(tsp: Tsp, alpha: f64, beta: f64, rho: f64, q0: f64, num_ants: usize, max_iterations: usize) -> AntColonySystem {
+        // Calculate tau0 as 1 / (n * L_NN)
+        let mut nn = NearestNeighbor::new(tsp.clone());
+        let base_tour = nn.solve().total;
+        let n = tsp.dim();
+        let tau0 = 1.0 / (n as f64 * base_tour);
+
+        let pheromones = vec![vec![tau0; n]; n];
+        let heuristic = vec![vec![0.0; n]; n];
 
         let mut acs = AntColonySystem {
             tsp,
@@ -40,16 +39,12 @@ impl AntColonySystem {
             best_tour: vec![],
             best_cost: f64::INFINITY,
 
-            // params
-
             alpha,
             beta,
             rho,
             tau0,
             q0,
             num_ants,
-            // evaporation_rate,
-            // elitism,
             max_iterations,
         };
 
@@ -155,11 +150,19 @@ impl AntColonySystem {
     fn global_pheromone_update(&mut self) {
         let deposit = 1.0 / self.best_cost;
 
+        // Evaporation on all edges
+        for i in 0..self.tsp.dim() {
+            for j in 0..self.tsp.dim() {
+                self.pheromones[i][j] *= 1.0 - self.alpha;
+            }
+        }
+
+        // Pheromone update only for the best tour
         for i in 0..self.best_tour.len() {
             let from = self.best_tour[i];
             let to = self.best_tour[(i + 1) % self.best_tour.len()];
 
-            self.pheromones[from][to] = (1.0 - self.alpha) * self.pheromones[from][to] + self.alpha * deposit;
+            self.pheromones[from][to] += self.alpha * deposit;
             self.pheromones[to][from] = self.pheromones[from][to];
         }
     }
@@ -205,10 +208,9 @@ impl TspSolver for AntColonySystem {
 
 #[cfg(test)]
 mod tests {
-    use crate::algorithms::heuristic::nearest_neighbor::NearestNeighbor;
     use crate::algorithms::metaheuristic::ant_colony::ant_colony_system::AntColonySystem;
     use crate::algorithms::TspSolver;
-    use crate::TspBuilder;
+    use crate::{Tsp, TspBuilder};
 
     #[test]
     fn test_example() {
@@ -228,14 +230,8 @@ mod tests {
         EOF
         ";
         let tsp = TspBuilder::parse_str(data).unwrap();
-        let mut nn = NearestNeighbor::new(tsp.clone());
-        let base_tour = nn.solve().total;
-        // let mut solver = AntColonySystem::with_options(tsp, 5.0, 10.0, 0.1, 1.0, 1.0, 20, 10.0, 1.0, 1000, base_tour);
-        let mut nn = NearestNeighbor::new(tsp.clone());
-        let base_tour = nn.solve().total;
         let n = tsp.dim();
-        let tau0 = 1.0 / (n as f64 * base_tour as f64);
-        let mut solver = AntColonySystem::with_options(tsp, 0.1, 2.0, 0.1, tau0, 0.9, 10, 1000);
+        let mut solver = AntColonySystem::with_options(tsp, 0.1, 2.0, 0.1, 0.9, n, 1000);
 
         let solution = solver.solve();
 
@@ -248,12 +244,19 @@ mod tests {
         let path = "data/tsplib/gr17.tsp";
         let tsp = TspBuilder::parse_path(path).unwrap();
 
-        let size = tsp.dim();
-        let mut nn = NearestNeighbor::new(tsp.clone());
-        let base_tour = nn.solve().total;
         let n = tsp.dim();
-        let tau0 = 1.0 / (n as f64 * base_tour as f64);
-        let mut solver = AntColonySystem::with_options(tsp, 0.1, 2.0, 0.1, tau0, 0.9, 10, 1000);
+        let mut solver = AntColonySystem::with_options(tsp, 0.1, 2.0, 0.1, 0.9, n, 1000);
+        let solution = solver.solve();
+
+        println!("{:?}", solution);
+        assert_eq!(solution.tour.len(), n);
+    }
+
+    fn test_instance(tsp: Tsp) {
+        let size = tsp.dim();
+
+        let n = tsp.dim();
+        let mut solver = AntColonySystem::with_options(tsp, 0.1, 2.0, 0.1, 0.9, n, 1000);
         let solution = solver.solve();
 
         println!("{:?}", solution);
@@ -265,15 +268,13 @@ mod tests {
         let path = "data/tsplib/gr666.tsp";
         let tsp = TspBuilder::parse_path(path).unwrap();
 
-        let size = tsp.dim();
-        let mut nn = NearestNeighbor::new(tsp.clone());
-        let base_tour = nn.solve().total;
-        let n = tsp.dim();
-        let tau0 = 1.0 / (n as f64 * base_tour as f64);
-        let mut solver = AntColonySystem::with_options(tsp, 0.1, 2.0, 0.1, tau0, 0.9, 10, 1000);
-        let solution = solver.solve();
+        test_instance(tsp);
+    }
 
-        println!("{:?}", solution);
-        assert_eq!(solution.tour.len(), size);
+    #[test]
+    fn test_p43() {
+        let path = "data/tsplib/berlin52.tsp";
+        let tsp = TspBuilder::parse_path(path).unwrap();
+        test_instance(tsp);
     }
 }
