@@ -25,6 +25,7 @@ pub struct BenchmarkResult {
     pub solution_quality: f64,
     pub solution: Vec<usize>,
 }
+
 fn run_parallel_benchmarks(
     instances: &[TspInstance],
     algorithms: &[Solver],
@@ -32,6 +33,7 @@ fn run_parallel_benchmarks(
     num_threads: usize,
     csv_file: Arc<Mutex<std::fs::File>>,
 ) {
+    println!("Starting parallel benchmarks with {} threads", num_threads);
     let pool = rayon::ThreadPoolBuilder::new()
         .num_threads(num_threads)
         .build()
@@ -39,19 +41,19 @@ fn run_parallel_benchmarks(
 
     pool.install(|| {
         instances.par_iter().for_each(|instance| {
+            println!("Processing instance: {}", instance.path);
             algorithms.par_iter().enumerate().for_each(|(idx, algorithm)| {
                 let params = &params[idx];
-                // println!("Benchmarking {} on instance: {}", algorithm, instance.path);
+                println!("> Benchmarking {} on instance: {}", algorithm, instance.path);
                 let result = run_benchmark_multiple(instance, *algorithm, params.clone(), 5);
-                // println!("> Finished benchmarking {} on instance: {}", algorithm, instance.path);
+                println!("< Finished benchmarking {} on instance: {}", algorithm, instance.path);
 
                 // Write result to CSV file immediately
                 write_result_to_csv(&result, &csv_file);
-
-                // print_benchmark_result(&result);
             });
         });
     });
+    println!("Finished all parallel benchmarks");
 }
 
 fn write_result_to_csv(result: &BenchmarkResult, csv_file: &Arc<Mutex<std::fs::File>>) {
@@ -75,10 +77,11 @@ fn run_benchmark_multiple(
     params: Vec<f64>,
     num_runs: usize,
 ) -> BenchmarkResult {
+    println!("Starting {} runs for {} on instance {}", num_runs, algorithm, instance.path);
     let results: Vec<BenchmarkResult> = (0..num_runs)
         .into_par_iter()
         .map(|i| {
-            // println!("Benchmarking {} on instance {} run {} ", algorithm, instance.path, i);
+            println!("Benchmarking {} on instance {} run {} ", algorithm, instance.path, i);
             let start = Instant::now();
             let tsp = Arc::new({
                 match TspBuilder::parse_path(&instance.path) {
@@ -94,6 +97,7 @@ fn run_benchmark_multiple(
             let duration = start.elapsed();
 
             let quality = (solution.total - instance.best_known) / instance.best_known * 100.0;
+            println!("Finished run {} for {} on instance {}", i, algorithm, instance.path);
             BenchmarkResult {
                 instance_name: tsp.name().to_string(),
                 algorithm_name: format!("{}", solver),
@@ -114,6 +118,7 @@ fn run_benchmark_multiple(
     let total_duration: Duration = results.iter().map(|r| r.execution_time).sum();
     let mut final_result = best_result;
     final_result.execution_time = total_duration / num_runs as u32;  // Average execution time
+    println!("Completed all runs for {} on instance {}", algorithm, instance.path);
     final_result
 }
 
@@ -178,7 +183,9 @@ fn build_solver<'a>(instance: String, algorithm: Solver, params: &Vec<f64>) -> B
         _ => unimplemented!(),
     }
 }
+
 fn benchmark(solvers: &[Solver], params: &[Vec<f64>], num_threads: usize) {
+    println!("Starting benchmark process");
     let instances_names = vec![
         ("gr17", 2085f64),
         ("gr21", 2707f64),
@@ -188,28 +195,11 @@ fn benchmark(solvers: &[Solver], params: &[Vec<f64>], num_threads: usize) {
         ("brazil58", 25395.0),
         ("gr120", 6942.0),
         ("gr137", 69853.0),
-        ("gr202", 40160.0),
         ("pr76", 108159.0),
         ("rat99", 1211.0),
-        ("pr107", 44303.0),
-        ("pr136", 96772.0),
-        ("pr144", 58537.0),
-        ("pr152", 73682.0),
-        ("d198", 15780.0),
         ("eil51", 426.0),
         ("eil76", 538.0),
-        ("gr229", 134602.0),
-        ("kroA150", 26524.0),
-        ("kroA200", 29368.0),
-        ("lin105", 14379.0),
-        // ("pr264", 49135.0),
-        // ("pr299", 48191.0),
-        ("rd100", 7910.0),
-        ("u159", 42080.0),
-        // ("d1291", 50801.0),
-        // ("d493", 35002.0),
     ];
-
 
     let instances: Vec<TspInstance> = instances_names
         .iter()
@@ -218,7 +208,7 @@ fn benchmark(solvers: &[Solver], params: &[Vec<f64>], num_threads: usize) {
             best_known: *best_known,
         }).collect();
 
-    // println!("Benchmarking on different instances:");
+    println!("Prepared {} instances for benchmarking", instances.len());
 
     let csv_file = Arc::new(Mutex::new(create_csv_file("Parallel-TSP-Benchmark.csv")));
 
@@ -228,10 +218,12 @@ fn benchmark(solvers: &[Solver], params: &[Vec<f64>], num_threads: usize) {
         writeln!(file, "Instance,Algorithm,Time (ms),Found Tour Length,Best Known Length,Gap (%),Solution").expect("Unable to write to file");
     }
 
+    println!("Starting parallel benchmarks");
     run_parallel_benchmarks(&instances, solvers, params, num_threads, csv_file.clone());
 
-    // println!("Results saved to Parallel-TSP-Benchmark.csv");
+    println!("Benchmarking complete. Results saved to Parallel-TSP-Benchmark.csv");
 }
+
 fn create_csv_file(filename: &str) -> std::fs::File {
     OpenOptions::new()
         .write(true)
@@ -271,11 +263,10 @@ fn save_results_to_csv(results: &[BenchmarkResult], filename: &str) {
             result.solution.iter().map(|&x| x.to_string()).collect::<Vec<String>>().join(" ")
         ).expect("Unable to write to file");
     }
-
-    // println!("Results saved to {}", filename);
 }
 
 fn main() {
+    println!("Starting TSP benchmark program");
     let solvers = vec![
         Solver::NearestNeighbor,
         Solver::TwoOpt,
@@ -297,5 +288,7 @@ fn main() {
     ];
 
     let num_threads = 64;
+    println!("Configured {} solvers with {} threads", solvers.len(), num_threads);
     benchmark(&solvers, &params, num_threads);
+    println!("Benchmark program completed");
 }
