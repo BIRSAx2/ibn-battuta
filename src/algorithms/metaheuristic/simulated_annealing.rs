@@ -29,7 +29,7 @@ impl SimulatedAnnealing {
             cooling_rate,
             min_temperature,
             max_iterations,
-            cycles_per_temperature, // Initialize new parameter
+            cycles_per_temperature, // Initialize with_options parameter
         }
     }
 
@@ -162,8 +162,19 @@ mod tests {
         let path = "data/tsplib/gr17.tsp";
         let tsp = TspBuilder::parse_path(path).unwrap();
 
+        test_instance(tsp);
+    }
+
+    #[test]
+    fn test_gr120() {
+        let path = "data/tsplib/berlin52.tsp";
+        let tsp = TspBuilder::parse_path(path).unwrap();
+
+        test_instance(tsp);
+    }
+    fn test_instance(tsp: Tsp) {
         let size = tsp.dim();
-        let mut solver = SimulatedAnnealing::with_options(tsp, 1000.0, 0.003, 0.0001, 1000, 10);
+        let mut solver = SimulatedAnnealing::with_options(tsp, 1000.0, 0.001, 0.0001, 1000, 100);
         let solution = solver.solve();
         println!("{:?}", solution);
         assert_eq!(solution.tour.len(), size);

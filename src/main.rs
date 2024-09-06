@@ -123,9 +123,7 @@ fn build_solver<'a>(instance: String, algorithm: Solver, params: &Vec<f64>) -> B
             Box::new(NearestNeighbor::new(tsp))
         }
         Solver::TwoOpt => {
-            let mut nn = NearestNeighbor::new(tsp.clone());
-            let base_tour = nn.solve().tour;
-            Box::new(TwoOpt::from(tsp, base_tour, false))
+            Box::new(TwoOpt::new(tsp))
         }
         Solver::LinKernighan => {
             let mut nn = NearestNeighbor::new(tsp.clone());
@@ -170,6 +168,14 @@ fn build_solver<'a>(instance: String, algorithm: Solver, params: &Vec<f64>) -> B
                                                alpha_black, beta_black, rho_black, tau0, q0_black,
                                                num_ants, max_iterations, c))
         }
+        Solver::AntSystem => {
+            let alpha = params[0];
+            let beta = params[1];
+            let rho = params[2];
+            let max_iterations = params[4] as usize;
+            let num_ants = 20;
+            Box::new(AntSystem::with_options(tsp, alpha, beta, rho, num_ants, max_iterations))
+        }
         _ => unimplemented!(),
     }
 }
@@ -184,8 +190,23 @@ fn benchmark(solvers: &[Solver], params: &[Vec<f64>], num_threads: usize) {
         ("gr120", 6942.0),
         ("gr137", 69853.0),
         ("gr202", 40160.0),
-        // ("gr666", 294358.0),
-        // ("pla7397", 23260728.0),
+        ("pr76", 108159.0),
+        ("rat99", 1211.0),
+        ("pr107", 44303.0),
+        ("pr136", 96772.0),
+        ("pr144", 58537.0),
+        ("pr152", 73682.0),
+        ("d198", 15780.0),
+        ("eli51", 426.0),
+        ("eli76", 538.0),
+        ("gr229", 134602.0),
+        ("kroA150", 26524.0),
+        ("kroA200", 29368.0),
+        ("lin105", 14379.0),
+        ("pr264", 49135.0),
+        ("pr299", 48191.0),
+        ("rd100", 7910.0),
+        ("u159", 42080.0),
     ];
 
     let instances: Vec<TspInstance> = instances_names
@@ -255,16 +276,22 @@ fn save_results_to_csv(results: &[BenchmarkResult], filename: &str) {
 fn main() {
     let solvers = vec![
         Solver::NearestNeighbor,
+        Solver::TwoOpt,
         Solver::SimulatedAnnealing,
+        Solver::GeneticAlgorithm,
         Solver::AntColonySystem,
         Solver::RedBlackAntColonySystem,
+        Solver::AntSystem,
     ];
 
     let params = vec![
-        vec![],
-        vec![100.0, 0.98, 1e-8, 1000.0, 10.0],
-        vec![0.1, 2.0, 0.1, 0.9, 1000.0],
-        vec![1.0, 2.0, 0.1, 0.9, 1.2, 1.5, 0.2, 0.8, 20.0, 1000.0, 100.0],
+        vec![], // NN
+        vec![], // 2-OPT
+        vec![1000.0, 0.001, 0.0001, 1000.0, 100.0], // SA
+        vec![100.0, 5.0, 0.01, 1000.0], // GA
+        vec![0.1, 2.0, 0.1, 0.9, 1000.0], // ACS
+        vec![1.0, 2.0, 0.1, 0.9, 1.2, 1.5, 0.2, 0.8, 20.0, 1000.0, 100.0], // RB-ACS
+        vec![1.0, 2.0, 0.5, 20.0, 1000.0], // AS
     ];
 
     let num_threads = 64;

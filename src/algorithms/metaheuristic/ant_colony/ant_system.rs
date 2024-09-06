@@ -1,9 +1,9 @@
 use crate::algorithms::{Solution, TspSolver};
+use crate::parser::Tsp;
 use rand::prelude::*;
 use std::f64;
-use crate::parser::Tsp;
-pub struct AntSystem<'a> {
-    tsp: &'a Tsp,
+pub struct AntSystem {
+    tsp: Tsp,
     pheromones: Vec<Vec<f64>>,
     best_tour: Vec<usize>,
     best_cost: f64,
@@ -14,8 +14,8 @@ pub struct AntSystem<'a> {
     max_iterations: usize,
 }
 
-impl<'a> AntSystem<'a> {
-    pub fn new(tsp: &'a Tsp, alpha: f64, beta: f64, rho: f64, num_ants: usize, max_iterations: usize) -> AntSystem<'a> {
+impl AntSystem {
+    pub fn with_options(tsp: Tsp, alpha: f64, beta: f64, rho: f64, num_ants: usize, max_iterations: usize) -> AntSystem {
         let dim = tsp.dim();
         let initial_pheromone = 1.0 / (dim as f64);
         let pheromones = vec![vec![initial_pheromone; dim]; dim];
@@ -120,7 +120,7 @@ impl<'a> AntSystem<'a> {
     }
 }
 
-impl TspSolver for AntSystem<'_> {
+impl TspSolver for AntSystem {
     fn solve(&mut self) -> Solution {
         for _ in 0..self.max_iterations {
             let mut solutions = Vec::with_capacity(self.num_ants);
@@ -146,6 +146,10 @@ impl TspSolver for AntSystem<'_> {
 
     fn cost(&self, from: usize, to: usize) -> f64 {
         self.tsp.weight(from, to)
+    }
+
+    fn format_name(&self) -> String {
+        format!("AntSystem")
     }
 }
 
@@ -173,11 +177,12 @@ mod tests {
         ";
         let tsp = TspBuilder::parse_str(data).unwrap();
 
-        let mut solver = AntSystem::new(&tsp, 1.0, 2.0, 0.5, 10, 100);
+        let size = tsp.dim();
+        let mut solver = AntSystem::with_options(tsp, 1.0, 2.0, 0.5, 10, 100);
         let solution = solver.solve();
 
         println!("{:?}", solution);
-        assert_eq!(solution.tour.len(), tsp.dim());
+        assert_eq!(solution.tour.len(), size);
     }
 
     #[test]
@@ -185,10 +190,11 @@ mod tests {
         let path = "data/tsplib/gr17.tsp";
         let tsp = TspBuilder::parse_path(path).unwrap();
 
-        let mut solver = AntSystem::new(&tsp, 1.0, 2.0, 0.5, 20, 1000);
+        let size = tsp.dim();
+        let mut solver = AntSystem::with_options(tsp, 1.0, 2.0, 0.5, 20, 1000);
         let solution = solver.solve();
 
         println!("{:?}", solution);
-        assert_eq!(solution.tour.len(), tsp.dim());
+        assert_eq!(solution.tour.len(), size);
     }
 }

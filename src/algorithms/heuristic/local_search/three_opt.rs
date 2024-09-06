@@ -55,7 +55,7 @@ impl ThreeOpt<'_> {
 
                                 if self.verbose {
                                     println!(
-                                        "3OPT: Improved tour at segments ({}, {}, {}), new cost: {}",
+                                        "3OPT: Improved tour at segments ({}, {}, {}), with_options cost: {}",
                                         i, j, k, self.cost
                                     );
                                 }

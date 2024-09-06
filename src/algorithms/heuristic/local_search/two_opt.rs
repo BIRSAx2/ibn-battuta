@@ -1,4 +1,5 @@
 use crate::algorithms::{Solution, TspSolver};
+use crate::NearestNeighbor;
 use crate::parser::Tsp;
 pub struct TwoOpt {
     tsp: Tsp,
@@ -11,13 +12,14 @@ pub struct TwoOpt {
 
 impl TwoOpt {
     pub fn new(tsp: Tsp) -> TwoOpt {
-        let base_tour = (0..tsp.dim()).collect();
+        let mut nn = NearestNeighbor::new(tsp.clone());
+        let base_tour = nn.solve().tour;
         TwoOpt {
             tsp,
             tour: vec![],
             cost: 0.0,
             verbose: false,
-            base_tour: base_tour,
+            base_tour,
         }
     }
 
@@ -67,7 +69,7 @@ impl TwoOpt {
 
                         if self.verbose {
                             println!(
-                                "2OPT: Swapped edges ({} - {}) and ({} - {}), new cost: {}",
+                                "2OPT: Swapped edges ({} - {}) and ({} - {}), with_options cost: {}",
                                 self.tour[i],
                                 self.tour[i + 1],
                                 self.tour[j],
@@ -108,7 +110,7 @@ impl TspSolver for TwoOpt {
     }
 
     fn format_name(&self) -> String {
-        format!("2Opt")
+        format!("NN+2Opt")
     }
 }
 #[cfg(test)]

@@ -870,7 +870,7 @@ impl Point {
         (self.id, self.pos)
     }
 
-    /// Constructs a new point.
+    /// Constructs a with_options point.
     pub fn new(id: usize, pos: Vec<f64>) -> Self {
         Self { id, pos }
     }

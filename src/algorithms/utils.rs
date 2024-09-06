@@ -12,7 +12,7 @@ pub enum Solver {
     LinKernighan,
     SimulatedAnnealing,
     GeneticAlgorithm,
-    AntColonyOptimization,
+    AntSystem,
     AntColonySystem,
     RedBlackAntColonySystem,
 }
@@ -29,7 +29,7 @@ impl Display for Solver {
             Solver::LinKernighan => write!(f, "LinKernighan"),
             Solver::SimulatedAnnealing => write!(f, "SimulatedAnnealing"),
             Solver::GeneticAlgorithm => write!(f, "GeneticAlgorithm"),
-            Solver::AntColonyOptimization => write!(f, "AntColonyOptimization"),
+            Solver::AntSystem => write!(f, "AntSystem"),
             Solver::AntColonySystem => write!(f, "AntColonySystem"),
             Solver::RedBlackAntColonySystem => write!(f, "RedBlackAntColonySystem"),
         }
