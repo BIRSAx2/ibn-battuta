@@ -267,7 +267,7 @@ mod tests {
 
     #[test]
     fn test_gr666() {
-        let path = "data/tsplib/gr120.tsp";
+        let path = "data/tsplib/gr17.tsp";
         let tsp = TspBuilder::parse_path(path).unwrap();
         let mut solver = RedBlackACS::new(tsp, 1.0, 2.0, 0.1, 0.2, 0.9, 20, 1000);
         let solution = solver.solve();

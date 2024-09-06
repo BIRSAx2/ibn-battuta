@@ -41,9 +41,9 @@ fn run_parallel_benchmarks(
         instances.par_iter().for_each(|instance| {
             algorithms.par_iter().enumerate().for_each(|(idx, algorithm)| {
                 let params = &params[idx];
-                println!("Benchmarking {} on instance: {}", algorithm, instance.path);
-                let result = run_benchmark_multiple(instance, *algorithm, params.clone(), 3);
-                println!("> Finished benchmarking {} on instance: {}", algorithm, instance.path);
+                // println!("Benchmarking {} on instance: {}", algorithm, instance.path);
+                let result = run_benchmark_multiple(instance, *algorithm, params.clone(), 5);
+                // println!("> Finished benchmarking {} on instance: {}", algorithm, instance.path);
 
                 // Write result to CSV file immediately
                 write_result_to_csv(&result, &csv_file);
@@ -206,7 +206,10 @@ fn benchmark(solvers: &[Solver], params: &[Vec<f64>], num_threads: usize) {
         ("pr299", 48191.0),
         ("rd100", 7910.0),
         ("u159", 42080.0),
+        ("d1291", 50801.0),
+        ("d493", 35002.0),
     ];
+
 
     let instances: Vec<TspInstance> = instances_names
         .iter()
