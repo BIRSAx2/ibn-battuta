@@ -178,7 +178,7 @@ mod tests {
         let tsp = TspBuilder::parse_str(data).unwrap();
 
         let size = tsp.dim();
-        let mut solver = AntSystem::with_options(tsp, 1.0, 2.0, 0.5, 10, 100);
+        let mut solver = AntSystem::with_options(tsp, 1.0, 2.0, 0.5, 20, 100);
         let solution = solver.solve();
 
         println!("{:?}", solution);
@@ -187,11 +187,11 @@ mod tests {
 
     #[test]
     fn test_gr17() {
-        let path = "data/tsplib/gr17.tsp";
+        let path = "data/tsplib/bier127.tsp";
         let tsp = TspBuilder::parse_path(path).unwrap();
 
         let size = tsp.dim();
-        let mut solver = AntSystem::with_options(tsp, 1.0, 2.0, 0.5, 20, 1000);
+        let mut solver = AntSystem::with_options(tsp, 1.0, 2.0, 0.5, 20, 100);
         let solution = solver.solve();
 
         println!("{:?}", solution);

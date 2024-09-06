@@ -265,7 +265,7 @@ mod tests {
 
     #[test]
     fn test_gr666() {
-        let path = "data/tsplib/gr666.tsp";
+        let path = "data/tsplib/bier127.tsp";
         let tsp = TspBuilder::parse_path(path).unwrap();
 
         test_instance(tsp);

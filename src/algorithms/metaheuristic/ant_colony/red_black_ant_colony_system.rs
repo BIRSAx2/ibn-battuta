@@ -2,7 +2,7 @@ use crate::algorithms::{Solution, TspSolver};
 use crate::parser::Tsp;
 use crate::NearestNeighbor;
 use rand::prelude::*;
-use std::f64;
+use std::{f64, mem};
 
 pub struct RedBlackACS {
     tsp: Tsp,
@@ -176,16 +176,20 @@ impl RedBlackACS {
         }
     }
 
-    fn update_best_solution(&mut self, tour: &Vec<usize>, is_red: bool) {
+    fn update_best_solution(&mut self, tour: &mut Vec<usize>, is_red: bool) {
         let cost = self.calculate_tour_cost(tour);
         if is_red {
             if cost < self.best_cost_red {
-                self.best_tour_red = tour.clone();
+                // self.best_tour_red = tour.clone();
+                mem::swap(&mut self.best_tour_red, tour);
+
                 self.best_cost_red = cost;
             }
         } else {
             if cost < self.best_cost_black {
-                self.best_tour_black = tour.clone();
+                // self.best_tour_black = tour.clone();
+                mem::swap(&mut self.best_tour_black, tour);
+
                 self.best_cost_black = cost;
             }
         }
@@ -202,8 +206,8 @@ impl TspSolver for RedBlackACS {
         for _ in 0..self.max_iterations {
             for ant in 0..self.num_ants * 2 {
                 let is_red = ant < self.num_ants;
-                let solution = self.construct_solution(is_red);
-                self.update_best_solution(&solution, is_red);
+                let mut solution = self.construct_solution(is_red);
+                self.update_best_solution(&mut solution, is_red);
             }
             self.global_pheromone_update();
         }
@@ -211,6 +215,8 @@ impl TspSolver for RedBlackACS {
         Solution {
             tour: if self.best_cost_red < self.best_cost_black {
                 self.best_tour_red.clone()
+                // mem::swap(&mut self.best_tour_red, tour);
+
             } else {
                 self.best_tour_black.clone()
             },
@@ -218,6 +224,7 @@ impl TspSolver for RedBlackACS {
         }
     }
 
+    #[inline(always)]
     fn tour(&self) -> Vec<usize> {
         if self.best_cost_red < self.best_cost_black {
             self.best_tour_red.clone()
@@ -267,9 +274,9 @@ mod tests {
 
     #[test]
     fn test_gr666() {
-        let path = "data/tsplib/gr17.tsp";
+        let path = "data/tsplib/usa13509.tsp";
         let tsp = TspBuilder::parse_path(path).unwrap();
-        let mut solver = RedBlackACS::new(tsp, 1.0, 2.0, 0.1, 0.2, 0.9, 20, 1000);
+        let mut solver = RedBlackACS::new(tsp, 1.0, 2.0, 0.1, 0.2, 0.9, 20, 10);
         let solution = solver.solve();
         println!("{:?}", solution);
     }

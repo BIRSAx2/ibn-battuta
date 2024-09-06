@@ -45,7 +45,7 @@ fn run_parallel_benchmarks(
             algorithms.par_iter().enumerate().for_each(|(idx, algorithm)| {
                 let params = &params[idx];
                 println!("> Benchmarking {} on instance: {}", algorithm, instance.path);
-                let result = run_benchmark_multiple(instance, *algorithm, params.clone(), 5);
+                let result = run_benchmark_multiple(instance, *algorithm, params.clone(), 3);
                 println!("< Finished benchmarking {} on instance: {}", algorithm, instance.path);
 
                 // Write result to CSV file immediately
@@ -199,6 +199,12 @@ fn benchmark(solvers: &[Solver], params: &[Vec<f64>], num_threads: usize) {
         ("rat99", 1211.0),
         ("eil51", 426.0),
         ("eil76", 538.0),
+        ("pcb442", 50778.0),
+        ("vm1084", 239297.0),
+        ("vm1748", 336556.0),
+        ("brd14051", 469385.0),
+        ("d15112", 1573084.0),
+        ("d18512", 645238.0)
     ];
 
     let instances: Vec<TspInstance> = instances_names
@@ -271,7 +277,7 @@ fn main() {
         Solver::NearestNeighbor,
         Solver::TwoOpt,
         Solver::SimulatedAnnealing,
-        Solver::GeneticAlgorithm,
+        // Solver::GeneticAlgorithm,
         Solver::AntColonySystem,
         Solver::RedBlackAntColonySystem,
         Solver::AntSystem,
@@ -281,7 +287,7 @@ fn main() {
         vec![], // NN
         vec![], // 2-OPT
         vec![1000.0, 0.999, 0.0001, 1000.0, 100.0], // SA
-        vec![100.0, 5.0, 0.01, 1000.0], // GA
+        // vec![100.0, 5.0, 0.01, 1000.0], // GA
         vec![0.1, 2.0, 0.1, 0.9, 1000.0], // ACS
         vec![1.0, 2.0, 0.1, 0.2, 0.9, 20.0, 1000.0], // RB-ACS
         vec![1.0, 2.0, 0.5, 20.0, 1000.0], // AS
