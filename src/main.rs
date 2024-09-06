@@ -80,7 +80,15 @@ fn run_benchmark_multiple(
         .map(|i| {
             // println!("Benchmarking {} on instance {} run {} ", algorithm, instance.path, i);
             let start = Instant::now();
-            let tsp = Arc::new(TspBuilder::parse_path(&instance.path).unwrap());
+            let tsp = Arc::new({
+                match TspBuilder::parse_path(&instance.path) {
+                    Ok(tsp) => tsp,
+                    Err(e) => {
+                        eprintln!("Error parsing TSP instance {} :{}", instance.path, e);
+                        std::process::exit(1);
+                    }
+                }
+            });
             let mut solver = build_solver(instance.path.clone(), algorithm, &params);
             let solution = solver.solve();
             let duration = start.elapsed();
@@ -188,8 +196,8 @@ fn benchmark(solvers: &[Solver], params: &[Vec<f64>], num_threads: usize) {
         ("pr144", 58537.0),
         ("pr152", 73682.0),
         ("d198", 15780.0),
-        ("eli51", 426.0),
-        ("eli76", 538.0),
+        ("eil51", 426.0),
+        ("eil76", 538.0),
         ("gr229", 134602.0),
         ("kroA150", 26524.0),
         ("kroA200", 29368.0),
