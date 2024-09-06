@@ -42,7 +42,7 @@ fn run_parallel_benchmarks(
             algorithms.par_iter().enumerate().for_each(|(idx, algorithm)| {
                 let params = &params[idx];
                 println!("Benchmarking {} on instance: {}", algorithm, instance.path);
-                let result = run_benchmark_multiple(instance, *algorithm, params.clone(), 10);
+                let result = run_benchmark_multiple(instance, *algorithm, params.clone(), 5);
                 println!("> Finished benchmarking {} on instance: {}", algorithm, instance.path);
 
                 // Write result to CSV file immediately
@@ -146,7 +146,7 @@ fn build_solver<'a>(instance: String, algorithm: Solver, params: &Vec<f64>) -> B
             let rho = params[2];
             let q0 = params[3];
             let max_iterations = params[4] as usize;
-            let num_ants = tsp.dim();
+            let num_ants = 20;
             Box::new(AntColonySystem::with_options(tsp, alpha, beta, rho, q0, num_ants, max_iterations))
         }
         Solver::RedBlackAntColonySystem => {
@@ -184,8 +184,8 @@ fn benchmark(solvers: &[Solver], params: &[Vec<f64>], num_threads: usize) {
         ("gr120", 6942.0),
         ("gr137", 69853.0),
         ("gr202", 40160.0),
-        ("gr666", 294358.0),
-        ("pla7397", 23260728.0),
+        // ("gr666", 294358.0),
+        // ("pla7397", 23260728.0),
     ];
 
     let instances: Vec<TspInstance> = instances_names
