@@ -48,7 +48,7 @@ fn run_parallel_benchmarks(
                 // Write result to CSV file immediately
                 write_result_to_csv(&result, &csv_file);
 
-                print_benchmark_result(&result);
+                // print_benchmark_result(&result);
             });
         });
     });
@@ -78,7 +78,7 @@ fn run_benchmark_multiple(
     let results: Vec<BenchmarkResult> = (0..num_runs)
         .into_par_iter()
         .map(|i| {
-            println!("Benchmarking {} on instance {} run {} ", algorithm, instance.path, i);
+            // println!("Benchmarking {} on instance {} run {} ", algorithm, instance.path, i);
             let start = Instant::now();
             let tsp = Arc::new(TspBuilder::parse_path(&instance.path).unwrap());
             let mut solver = build_solver(instance.path.clone(), algorithm, &params);
@@ -207,7 +207,7 @@ fn benchmark(solvers: &[Solver], params: &[Vec<f64>], num_threads: usize) {
             best_known: *best_known,
         }).collect();
 
-    println!("Benchmarking on different instances:");
+    // println!("Benchmarking on different instances:");
 
     let csv_file = Arc::new(Mutex::new(create_csv_file("Parallel-TSP-Benchmark.csv")));
 
@@ -219,7 +219,7 @@ fn benchmark(solvers: &[Solver], params: &[Vec<f64>], num_threads: usize) {
 
     run_parallel_benchmarks(&instances, solvers, params, num_threads, csv_file.clone());
 
-    println!("Results saved to Parallel-TSP-Benchmark.csv");
+    // println!("Results saved to Parallel-TSP-Benchmark.csv");
 }
 fn create_csv_file(filename: &str) -> std::fs::File {
     OpenOptions::new()
@@ -261,7 +261,7 @@ fn save_results_to_csv(results: &[BenchmarkResult], filename: &str) {
         ).expect("Unable to write to file");
     }
 
-    println!("Results saved to {}", filename);
+    // println!("Results saved to {}", filename);
 }
 
 fn main() {
@@ -278,7 +278,7 @@ fn main() {
     let params = vec![
         vec![], // NN
         vec![], // 2-OPT
-        vec![1000.0, 0.001, 0.0001, 1000.0, 100.0], // SA
+        vec![1000.0, 0.999, 0.0001, 1000.0, 100.0], // SA
         vec![100.0, 5.0, 0.01, 1000.0], // GA
         vec![0.1, 2.0, 0.1, 0.9, 1000.0], // ACS
         vec![1.0, 2.0, 0.1, 0.2, 0.9, 20.0, 1000.0], // RB-ACS

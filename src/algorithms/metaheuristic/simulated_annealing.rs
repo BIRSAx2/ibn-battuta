@@ -1,3 +1,4 @@
+use crate::algorithms::NearestNeighbor;
 use crate::algorithms::{Solution, TspSolver};
 use crate::parser::Tsp;
 use rand::prelude::*;
@@ -10,16 +11,18 @@ pub struct SimulatedAnnealing {
     initial_temperature: f64,
     cooling_rate: f64,
     min_temperature: f64,
-    max_iterations: usize,
-    cycles_per_temperature: usize, // New parameter for cycles at each temperature
+    max_temperature_changes: usize,
+    cycles_per_temperature: usize,
 }
 
 impl SimulatedAnnealing {
-    pub fn with_options(tsp: Tsp, initial_temperature: f64,
-                        cooling_rate: f64,
-                        min_temperature: f64,
-                        max_iterations: usize,
-                        cycles_per_temperature: usize, // New parameter
+    pub fn with_options(
+        tsp: Tsp,
+        initial_temperature: f64,
+        cooling_rate: f64,
+        min_temperature: f64,
+        max_temperature_changes: usize,
+        cycles_per_temperature: usize,
     ) -> SimulatedAnnealing {
         SimulatedAnnealing {
             tsp,
@@ -28,16 +31,15 @@ impl SimulatedAnnealing {
             initial_temperature,
             cooling_rate,
             min_temperature,
-            max_iterations,
-            cycles_per_temperature, // Initialize with_options parameter
+            max_temperature_changes,
+            cycles_per_temperature,
         }
     }
 
     fn initial_solution(&mut self) {
-        let mut rng = rand::thread_rng();
-        self.tour = (0..self.tsp.dim()).collect();
-        self.tour.shuffle(&mut rng);
-        self.cost = self.calculate_tour_cost(&self.tour);
+        let solution = NearestNeighbor::new(self.tsp.clone()).solve();
+        self.tour = solution.tour;
+        self.cost = solution.total;
     }
 
     fn calculate_tour_cost(&self, tour: &Vec<usize>) -> f64 {
@@ -63,12 +65,7 @@ impl SimulatedAnnealing {
     }
 
     fn acceptance_probability(old_cost: f64, new_cost: f64, temperature: f64) -> f64 {
-        let cost_difference = new_cost - old_cost;
-        if cost_difference < 0.0 {
-            1.0
-        } else {
-            f64::exp(-cost_difference / temperature)
-        }
+        f64::exp(-(new_cost - old_cost) / temperature)
     }
 }
 
@@ -82,23 +79,23 @@ impl TspSolver for SimulatedAnnealing {
 
         let mut temperature = self.initial_temperature;
 
-        for _ in 0..self.max_iterations {
-            for _ in 0..self.cycles_per_temperature { // Loop for cycles at current temperature
+        for _ in 0..self.max_temperature_changes {
+            for _ in 0..self.cycles_per_temperature {
                 let new_tour = self.generate_neighbor();
                 let new_cost = self.calculate_tour_cost(&new_tour);
 
                 if SimulatedAnnealing::acceptance_probability(self.cost, new_cost, temperature) > rng.gen() {
                     self.tour = new_tour;
                     self.cost = new_cost;
-                }
 
-                if self.cost < best_cost {
-                    best_tour = self.tour.clone();
-                    best_cost = self.cost;
+                    if self.cost < best_cost {
+                        best_tour = self.tour.clone();
+                        best_cost = self.cost;
+                    }
                 }
             }
 
-            temperature *= 1.0 - self.cooling_rate;
+            temperature *= self.cooling_rate;
 
             if temperature < self.min_temperature {
                 break;
@@ -159,10 +156,13 @@ mod tests {
 
     #[test]
     fn test_gr17() {
-        let path = "data/tsplib/gr17.tsp";
+        let path = "data/tsplib/bier127.tsp";
         let tsp = TspBuilder::parse_path(path).unwrap();
 
-        test_instance(tsp);
+        let sol = test_instance(tsp);
+        let best_known = 118282.0;
+        let gap = (sol.total - best_known) / best_known;
+        println!("Gap: {:.2}%", gap * 100.0);
     }
 
     #[test]
@@ -172,11 +172,13 @@ mod tests {
 
         test_instance(tsp);
     }
-    fn test_instance(tsp: Tsp) {
+
+    fn test_instance(tsp: Tsp) -> Solution {
         let size = tsp.dim();
-        let mut solver = SimulatedAnnealing::with_options(tsp, 1000.0, 0.001, 0.0001, 1000, 100);
+        let mut solver = SimulatedAnnealing::with_options(tsp, 1000.0, 0.999, 0.0001, 1000, 100);
         let solution = solver.solve();
         println!("{:?}", solution);
         assert_eq!(solution.tour.len(), size);
+        solution
     }
 }
