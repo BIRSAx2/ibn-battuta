@@ -235,7 +235,7 @@ impl Tsp {
                 if let (Some(na), Some(nb)) = (self.node_coords.get(&a), self.node_coords.get(&b)) {
                     self.weight_kind.cost(na.pos(), nb.pos())
                 } else {
-                    0.
+                    panic!("Node not found: a={}, b={}", a, b);
                 }
             }
         }
@@ -876,11 +876,11 @@ impl Point {
     }
 
     pub fn new2(id: usize, x: f64, y: f64) -> Self {
-        Self::new(id, vec![x, y])
+        Self::new(id - 1, vec![x, y])
     }
 
     pub fn new3(id: usize, x: f64, y: f64, z: f64) -> Self {
-        Self::new(id, vec![x, y, z])
+        Self::new(id - 1, vec![x, y, z])
     }
 }
 
