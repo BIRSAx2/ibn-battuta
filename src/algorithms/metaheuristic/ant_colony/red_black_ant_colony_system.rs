@@ -1,5 +1,6 @@
 use crate::algorithms::{Solution, TspSolver};
 use crate::parser::Tsp;
+use crate::NearestNeighbor;
 use rand::prelude::*;
 use std::f64;
 
@@ -12,35 +13,34 @@ pub struct RedBlackACS {
     best_tour_black: Vec<usize>,
     best_cost_red: f64,
     best_cost_black: f64,
-    alpha_red: f64,
-    beta_red: f64,
+    alpha: f64,
+    beta: f64,
     rho_red: f64,
-    alpha_black: f64,
-    beta_black: f64,
     rho_black: f64,
-    tau0_red: f64,
-    tau0_black: f64,
-    q0_red: f64,
-    q0_black: f64,
+    tau0: f64,
+    q0: f64,
     num_ants: usize,
     max_iterations: usize,
 }
 
 impl RedBlackACS {
-    pub fn with_options(tsp: Tsp, alpha_red: f64, beta_red: f64, rho_red: f64, tau0_red: f64, q0_red: f64,
-                        alpha_black: f64, beta_black: f64, rho_black: f64, tau0_black: f64, q0_black: f64,
-                        num_ants: usize, max_iterations: usize, c: f64) -> RedBlackACS {
+    pub fn new(tsp: Tsp, alpha: f64, beta: f64, rho_red: f64, rho_black: f64, q0: f64,
+               num_ants: usize, max_iterations: usize) -> RedBlackACS {
         let dim = tsp.dim();
         let mut pheromones_red = vec![vec![0.0; dim]; dim];
         let mut pheromones_black = vec![vec![0.0; dim]; dim];
         let heuristic = vec![vec![0.0; dim]; dim];
 
-        // Initialize pheromones based on edge costs for both red and black ants
+        // Calculate tau0 based on nearest neighbor heuristic
+        let nn_tour_length = NearestNeighbor::new(tsp.clone()).solve().total;
+        let tau0 = 1.0 / (dim as f64 * nn_tour_length);
+
+        // Initialize pheromones
         for i in 0..dim {
             for j in 0..dim {
                 if i != j {
-                    pheromones_red[i][j] = c / tsp.weight(i, j);
-                    pheromones_black[i][j] = c / tsp.weight(i, j);
+                    pheromones_red[i][j] = tau0;
+                    pheromones_black[i][j] = tau0;
                 }
             }
         }
@@ -54,16 +54,12 @@ impl RedBlackACS {
             best_tour_black: vec![],
             best_cost_red: f64::INFINITY,
             best_cost_black: f64::INFINITY,
-            alpha_red,
-            beta_red,
+            alpha,
+            beta,
             rho_red,
-            alpha_black,
-            beta_black,
             rho_black,
-            tau0_red,
-            tau0_black,
-            q0_red,
-            q0_black,
+            tau0,
+            q0,
             num_ants,
             max_iterations,
         };
@@ -105,51 +101,33 @@ impl RedBlackACS {
     fn select_next_city(&self, partial_tour: &[usize], visited: &[bool], rng: &mut ThreadRng, is_red: bool) -> usize {
         let current_city = partial_tour[partial_tour.len() - 1];
 
-        if is_red {
-            if rng.gen::<f64>() < self.q0_red {
-                self.select_best_city(current_city, visited, true)
-            } else {
-                self.select_probabilistic_city(current_city, visited, rng, true)
-            }
+        if rng.gen::<f64>() < self.q0 {
+            self.select_best_city(current_city, visited, is_red)
         } else {
-            if rng.gen::<f64>() < self.q0_black {
-                self.select_best_city(current_city, visited, false)
-            } else {
-                self.select_probabilistic_city(current_city, visited, rng, false)
-            }
+            self.select_probabilistic_city(current_city, visited, rng, is_red)
         }
     }
 
     fn select_best_city(&self, current_city: usize, visited: &[bool], is_red: bool) -> usize {
+        let pheromones = if is_red { &self.pheromones_red } else { &self.pheromones_black };
         (0..self.tsp.dim())
             .filter(|&city| !visited[city])
             .max_by(|&a, &b| {
-                let score_a = if is_red {
-                    self.pheromones_red[current_city][a] * self.heuristic[current_city][a].powf(self.beta_red)
-                } else {
-                    self.pheromones_black[current_city][a] * self.heuristic[current_city][a].powf(self.beta_black)
-                };
-                let score_b = if is_red {
-                    self.pheromones_red[current_city][b] * self.heuristic[current_city][b].powf(self.beta_red)
-                } else {
-                    self.pheromones_black[current_city][b] * self.heuristic[current_city][b].powf(self.beta_black)
-                };
+                let score_a = pheromones[current_city][a] * self.heuristic[current_city][a].powf(self.beta);
+                let score_b = pheromones[current_city][b] * self.heuristic[current_city][b].powf(self.beta);
                 score_a.partial_cmp(&score_b).unwrap()
             })
             .unwrap()
     }
 
     fn select_probabilistic_city(&self, current_city: usize, visited: &[bool], rng: &mut ThreadRng, is_red: bool) -> usize {
+        let pheromones = if is_red { &self.pheromones_red } else { &self.pheromones_black };
         let mut probabilities = vec![0.0; self.tsp.dim()];
         let mut total = 0.0;
 
         for (city, &visited) in visited.iter().enumerate() {
             if !visited {
-                let probability = if is_red {
-                    self.pheromones_red[current_city][city] * self.heuristic[current_city][city].powf(self.beta_red)
-                } else {
-                    self.pheromones_black[current_city][city] * self.heuristic[current_city][city].powf(self.beta_black)
-                };
+                let probability = pheromones[current_city][city] * self.heuristic[current_city][city].powf(self.beta);
                 probabilities[city] = probability;
                 total += probability;
             }
@@ -170,13 +148,13 @@ impl RedBlackACS {
 
     fn local_pheromone_update(&mut self, edge: &[usize], is_red: bool) {
         let (i, j) = (edge[0], edge[1]);
-        if is_red {
-            self.pheromones_red[i][j] = (1.0 - self.rho_red) * self.pheromones_red[i][j] + self.rho_red * self.tau0_red;
-            self.pheromones_red[j][i] = self.pheromones_red[i][j];
+        let (pheromones, rho) = if is_red {
+            (&mut self.pheromones_red, self.rho_red)
         } else {
-            self.pheromones_black[i][j] = (1.0 - self.rho_black) * self.pheromones_black[i][j] + self.rho_black * self.tau0_black;
-            self.pheromones_black[j][i] = self.pheromones_black[i][j];
-        }
+            (&mut self.pheromones_black, self.rho_black)
+        };
+        pheromones[i][j] = (1.0 - rho) * pheromones[i][j] + rho * self.tau0;
+        pheromones[j][i] = pheromones[i][j];
     }
 
     fn global_pheromone_update(&mut self) {
@@ -214,13 +192,8 @@ impl RedBlackACS {
     }
 
     fn calculate_tour_cost(&self, tour: &Vec<usize>) -> f64 {
-        let mut cost = 0.0;
-        for i in 0..tour.len() {
-            let from = tour[i];
-            let to = tour[(i + 1) % tour.len()];
-            cost += self.tsp.weight(from, to);
-        }
-        cost
+        tour.windows(2).map(|w| self.tsp.weight(w[0], w[1])).sum::<f64>()
+            + self.tsp.weight(*tour.last().unwrap(), tour[0])
     }
 }
 
@@ -256,6 +229,7 @@ impl TspSolver for RedBlackACS {
     fn cost(&self, from: usize, to: usize) -> f64 {
         self.tsp.weight(from, to)
     }
+
     fn format_name(&self) -> String {
         format!("RedBlackACS")
     }
@@ -264,8 +238,6 @@ impl TspSolver for RedBlackACS {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::algorithms::heuristic::nearest_neighbor::NearestNeighbor;
-    use crate::algorithms::TspSolver;
     use crate::TspBuilder;
 
     #[test]
@@ -287,35 +259,18 @@ mod tests {
         ";
         let tsp = TspBuilder::parse_str(data).unwrap();
 
-        let mut nn = NearestNeighbor::new(tsp.clone());
-        let base_tour = nn.solve().total;
-        let n = tsp.dim();
-        let tau0_red = 1.0 / (n as f64 * base_tour as f64);
-        let tau0_black = 1.0 / (n as f64 * base_tour as f64);
-        let mut solver = RedBlackACS::with_options(tsp, 1.0, 2.0, 0.1, tau0_red, 0.9, 1.2, 1.5, 0.2, tau0_black, 0.8, 20, 1000, 100.0);
+        let mut solver = RedBlackACS::new(tsp, 1.0, 2.0, 0.1, 0.2, 0.9, 20, 1000);
         let solution = solver.solve();
 
         println!("{:?}", solution);
     }
 
-    fn test_instance(tsp: Tsp) {
-        let size = tsp.dim();
-
-        let mut nn = NearestNeighbor::new(tsp.clone());
-        let base_tour = nn.solve().total;
-        let n = tsp.dim();
-        let tau0_red = 1.0 / (n as f64 * base_tour as f64);
-        let tau0_black = 1.0 / (n as f64 * base_tour as f64);
-        let mut solver = RedBlackACS::with_options(tsp, 1.0, 2.0, 0.1, tau0_red, 0.9, 1.2, 1.5, 0.2, tau0_black, 0.8, 20, 1000, 100.0);
-        let solution = solver.solve();
-
-        println!("{:?}", solution);
-        assert_eq!(solution.tour.len(), size);
-    }
     #[test]
-    fn test_p43() {
-        let path = "data/tsplib/gr666.tsp";
+    fn test_gr666() {
+        let path = "data/tsplib/gr120.tsp";
         let tsp = TspBuilder::parse_path(path).unwrap();
-        test_instance(tsp);
+        let mut solver = RedBlackACS::new(tsp, 1.0, 2.0, 0.1, 0.2, 0.9, 20, 1000);
+        let solution = solver.solve();
+        println!("{:?}", solution);
     }
 }

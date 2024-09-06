@@ -42,7 +42,7 @@ fn run_parallel_benchmarks(
             algorithms.par_iter().enumerate().for_each(|(idx, algorithm)| {
                 let params = &params[idx];
                 println!("Benchmarking {} on instance: {}", algorithm, instance.path);
-                let result = run_benchmark_multiple(instance, *algorithm, params.clone(), 5);
+                let result = run_benchmark_multiple(instance, *algorithm, params.clone(), 3);
                 println!("> Finished benchmarking {} on instance: {}", algorithm, instance.path);
 
                 // Write result to CSV file immediately
@@ -148,25 +148,16 @@ fn build_solver<'a>(instance: String, algorithm: Solver, params: &Vec<f64>) -> B
             Box::new(AntColonySystem::with_options(tsp, alpha, beta, rho, q0, num_ants, max_iterations))
         }
         Solver::RedBlackAntColonySystem => {
-            let mut nn = NearestNeighbor::new(tsp.clone());
-            let base_tour = nn.solve().total;
-            let n = tsp.dim();
-            let tau0 = 1.0 / (n as f64 * base_tour as f64);
-            let alpha_red = params[0];
-            let beta_red = params[1];
+            let alpha = params[0];
+            let beta = params[1];
             let rho_red = params[2];
-            let q0_red = params[3];
-            let alpha_black = params[4];
-            let beta_black = params[5];
-            let rho_black = params[6];
-            let q0_black = params[7];
-            let num_ants = params[8] as usize;
-            let max_iterations = params[9] as usize;
-            let c = params[10];
+            let rho_black = params[3];
+            let q0 = params[4];
+            let num_ants = params[5] as usize;
+            let max_iterations = params[6] as usize;
 
-            Box::new(RedBlackACS::with_options(tsp, alpha_red, beta_red, rho_red, tau0, q0_red,
-                                               alpha_black, beta_black, rho_black, tau0, q0_black,
-                                               num_ants, max_iterations, c))
+            Box::new(RedBlackACS::new(tsp, alpha, beta, rho_red, rho_black, q0,
+                                      num_ants, max_iterations))
         }
         Solver::AntSystem => {
             let alpha = params[0];
@@ -290,7 +281,7 @@ fn main() {
         vec![1000.0, 0.001, 0.0001, 1000.0, 100.0], // SA
         vec![100.0, 5.0, 0.01, 1000.0], // GA
         vec![0.1, 2.0, 0.1, 0.9, 1000.0], // ACS
-        vec![1.0, 2.0, 0.1, 0.9, 1.2, 1.5, 0.2, 0.8, 20.0, 1000.0, 100.0], // RB-ACS
+        vec![1.0, 2.0, 0.1, 0.2, 0.9, 20.0, 1000.0], // RB-ACS
         vec![1.0, 2.0, 0.5, 20.0, 1000.0], // AS
     ];
 
