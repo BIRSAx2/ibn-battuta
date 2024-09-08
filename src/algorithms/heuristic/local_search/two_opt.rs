@@ -1,6 +1,6 @@
 use crate::algorithms::{Solution, TspSolver};
-use crate::NearestNeighbor;
 use crate::parser::Tsp;
+use crate::NearestNeighbor;
 pub struct TwoOpt {
     tsp: Tsp,
     tour: Vec<usize>,
@@ -110,7 +110,7 @@ impl TspSolver for TwoOpt {
     }
 
     fn format_name(&self) -> String {
-        format!("NN+2Opt")
+        format!("NN2Opt")
     }
 }
 #[cfg(test)]

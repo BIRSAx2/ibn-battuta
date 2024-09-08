@@ -2,6 +2,8 @@ use ibn_battuta::algorithms::utils::Solver;
 use ibn_battuta::algorithms::*;
 use ibn_battuta::parser::TspBuilder;
 use rayon::prelude::*;
+use std::fs::{File, OpenOptions};
+use std::io::Write;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -29,78 +31,86 @@ fn run_parallel_benchmarks(
     algorithms: &[Solver],
     params: &[Vec<f64>],
     num_threads: usize,
+    _csv_file: Arc<Mutex<std::fs::File>>,
 ) {
-    let pool = rayon::ThreadPoolBuilder::new()
-        .num_threads(num_threads)
-        .build()
-        .unwrap();
-
-    let results = Arc::new(Mutex::new(Vec::new()));
+    // println!("Starting parallel benchmarks with {} threads", num_threads);
+    let pool = rayon::ThreadPoolBuilder::new().num_threads(num_threads).build().unwrap();
 
     pool.install(|| {
-        let combinations: Vec<_> = instances.iter()
-            .flat_map(|instance| {
-                algorithms.iter().enumerate().map(move |(idx, algorithm)| {
-                    (instance, *algorithm, params[idx].clone())
-                })
-            })
-            .collect();
+        instances.par_iter().for_each(|instance| {
+            // println!("Processing instance: {}", instance.path);
+            algorithms.par_iter().enumerate().for_each(|(idx, algorithm)| {
+                let params = &params[idx];
+                // println!("> Benchmarking {} on instance: {}", algorithm, instance.path);
+                let result = run_benchmark_multiple(instance, *algorithm, params.clone(), 10);
+                // println!("< Finished benchmarking {} on instance: {}", algorithm, instance.path);
 
-        combinations.into_par_iter().for_each(|(instance, algorithm, params)| {
-            let result = run_benchmark_multiple(instance, algorithm, params, 3);
-            results.lock().unwrap().push(result);
+                // Write result to CSV file immediately
+                // write_result_to_csv(&result, &csv_file);
+                print_benchmark_result(&result);
+            });
         });
     });
-
-    // Print results after all computations are done
-    for result in results.lock().unwrap().iter() {
-        print_benchmark_result(result);
-    }
+    // println!("Finished all parallel benchmarks");
 }
+
+fn _write_result_to_csv(result: &BenchmarkResult, csv_file: &Arc<Mutex<std::fs::File>>) {
+    let mut file = csv_file.lock().unwrap();
+    writeln!(
+        file,
+        "{},{},{},{:.2},{:.2},{:.2},\"{}\"",
+        result.instance_name,
+        result.algorithm_name,
+        result.execution_time.as_millis(),
+        result.total_cost,
+        result.best_known,
+        result.solution_quality,
+        result.solution.iter().map(|&x| x.to_string()).collect::<Vec<String>>().join(" ")
+    ).expect("Unable to write to file");
+}
+
 fn run_benchmark_multiple(
     instance: &TspInstance,
     algorithm: Solver,
     params: Vec<f64>,
     num_runs: usize,
 ) -> BenchmarkResult {
-    let results: Vec<BenchmarkResult> = (0..num_runs)
-        .into_iter()
-        .map(|_| {
-            let tsp = Arc::new({
-                match TspBuilder::parse_path(&instance.path) {
-                    Ok(tsp) => tsp,
-                    Err(e) => {
-                        eprintln!("Error parsing TSP instance {} :{}", instance.path, e);
-                        std::process::exit(1);
-                    }
+    // println!("Starting {} runs for {} on instance {}", num_runs, algorithm, instance.path);
+    let results: Vec<BenchmarkResult> = (0..num_runs).into_par_iter().map(|_i| {
+        // println!("Benchmarking {} on instance {} run {} ", algorithm, instance.path, i);
+        let tsp = Arc::new({
+            match TspBuilder::parse_path(&instance.path) {
+                Ok(tsp) => tsp,
+                Err(e) => {
+                    eprintln!("Error parsing TSP instance {} :{}", instance.path, e);
+                    std::process::exit(1);
                 }
-            });
-            let start = Instant::now();
-            let mut solver = build_solver(instance.path.clone(), algorithm, &params);
-            let solution = solver.solve();
-            let duration = start.elapsed();
-
-            let quality = (solution.total - instance.best_known) / instance.best_known * 100.0;
-            BenchmarkResult {
-                instance_name: tsp.name().to_string(),
-                algorithm_name: format!("{}", solver),
-                execution_time: duration,
-                total_cost: solution.total,
-                best_known: instance.best_known,
-                solution_quality: quality,
-                solution: solution.tour,
             }
-        })
-        .collect();
+        });
+        let start = Instant::now();
+        let mut solver = build_solver(instance.path.clone(), algorithm, &params);
+        let solution = solver.solve();
+        let duration = start.elapsed();
 
-    let best_result = results.iter()
-        .min_by(|a, b| a.solution_quality.partial_cmp(&b.solution_quality).unwrap())
-        .unwrap()
-        .clone();
+        let quality = (solution.total - instance.best_known) / instance.best_known * 100.0;
+        // println!("Finished run {} for {} on instance {}", i, algorithm, instance.path);
+        BenchmarkResult {
+            instance_name: tsp.name().to_string(),
+            algorithm_name: format!("{}", solver),
+            execution_time: duration,
+            total_cost: solution.total,
+            best_known: instance.best_known,
+            solution_quality: quality,
+            solution: solution.tour,
+        }
+    }).collect();
+
+    let best_result = results.iter().min_by(|a, b| a.solution_quality.partial_cmp(&b.solution_quality).unwrap()).unwrap().clone();
 
     let total_duration: Duration = results.iter().map(|r| r.execution_time).sum();
     let mut final_result = best_result;
     final_result.execution_time = total_duration / num_runs as u32;  // Average execution time
+    // println!("Completed all runs for {} on instance {}", algorithm, instance.path);
     final_result
 }
 
@@ -221,7 +231,9 @@ fn build_solver<'a>(instance: String, algorithm: Solver, params: &Vec<f64>) -> B
         _ => unimplemented!(),
     }
 }
+
 fn benchmark(solvers: &[Solver], params: &[Vec<f64>], num_threads: usize) {
+    // println!("Starting benchmark process");
     let instances_names = vec![
         ("eil51", 426.0),
         ("berlin52", 7542.0),
@@ -241,20 +253,39 @@ fn benchmark(solvers: &[Solver], params: &[Vec<f64>], num_threads: usize) {
         ("pr1002", 259045.0),
         ("pcb1173", 56892.0),
         ("fl1577", 22249.0),
+        ("d1655", 62128.0),
+        ("d2103", 80450.0),
+        ("u2319", 234256.0),
+        ("rl5915", 565530.0),
     ];
 
-    let instances: Vec<TspInstance> = instances_names
-        .iter()
-        .map(|(name, best_known)| TspInstance {
-            path: format!("data/tsplib/{}.tsp", name),
-            best_known: *best_known,
-        }).collect();
+    let instances: Vec<TspInstance> = instances_names.iter().map(|(name, best_known)| TspInstance {
+        path: format!("data/tsplib/{}.tsp", name),
+        best_known: *best_known,
+    }).collect();
 
-    println!("instance,algorithm,time_ms,length,optimum,gap,solution");
+    // println!("Prepared {} instances for benchmarking", instances.len());
 
-    run_parallel_benchmarks(&instances, solvers, params, num_threads);
+    let csv_file = Arc::new(Mutex::new(create_csv_file("Parallel-TSP-Benchmark.csv")));
+
+    // Write CSV header
+    {
+        let mut file = csv_file.lock().unwrap();
+        writeln!(file, "Instance,Algorithm,Time_ms,Length,Optimum,Gap,Solution").expect("Unable to write to file");
+        println!("instance,algorithm,time_ms,length,optimum,gap,solution");
+    }
+
+    // println!("Starting parallel benchmarks");
+    run_parallel_benchmarks(&instances, solvers, params, num_threads, csv_file.clone());
+
+    // println!("Benchmarking complete. Results saved to Parallel-TSP-Benchmark.csv");
 }
 
+fn create_csv_file(filename: &str) -> std::fs::File {
+    OpenOptions::new().write(true).create(true).truncate(true).open(filename).expect("Unable to create file")
+}
+
+#[allow(dead_code)]
 fn print_benchmark_result(result: &BenchmarkResult) {
     println!(
         "{},{},{},{:.2},{:.2},{:.2},\"{}\"",
@@ -267,7 +298,30 @@ fn print_benchmark_result(result: &BenchmarkResult) {
         result.solution.iter().map(|&x| x.to_string()).collect::<Vec<String>>().join(" ")
     );
 }
+
+#[allow(dead_code)]
+fn save_results_to_csv(results: &[BenchmarkResult], filename: &str) {
+    let mut file = File::create(filename).expect("Unable to create file");
+
+    writeln!(file, "Instance,Algorithm,Time (ms),Found Tour Length,Best Known Length,Gap (%),Solution").expect("Unable to write to file");
+
+    for result in results {
+        writeln!(
+            file,
+            "{},{},{},{:.2},{:.2},{:.2},\"{}\"",
+            result.instance_name,
+            result.algorithm_name,
+            result.execution_time.as_millis(),
+            result.total_cost,
+            result.best_known,
+            result.solution_quality,
+            result.solution.iter().map(|&x| x.to_string()).collect::<Vec<String>>().join(" ")
+        ).expect("Unable to write to file");
+    }
+}
+
 fn main() {
+    // println!("Starting TSP benchmark program");
     let solvers = vec![
         Solver::NearestNeighbor,
         Solver::TwoOpt,
@@ -279,6 +333,7 @@ fn main() {
         Solver::AntColonySystem2Opt,
         Solver::RedBlackAntColonySystem,
         Solver::RedBlackAntColonySystem2Opt,
+        // Solver::AntSystem,
     ];
 
     let params = vec![
@@ -292,9 +347,11 @@ fn main() {
         vec![0.1, 2.0, 0.1, 0.9, 1000.0, 15.0], // ACS-2OPT
         vec![0.1, 2.0, 0.1, 0.2, 0.9, 1000.0, 15.0], // RB-ACS
         vec![0.1, 2.0, 0.1, 0.2, 0.9, 1000.0, 15.0], // RB-ACS-2OPT
+        // vec![0.1, 2.0, 0.1, 15.0, 1000.0], // AS
     ];
 
-    let num_threads = 120;
+    let num_threads = 108;
+    // println!("Configured {} solvers with {} threads", solvers.len(), num_threads);
     benchmark(&solvers, &params, num_threads);
     eprintln!("Benchmark program completed");
 }
