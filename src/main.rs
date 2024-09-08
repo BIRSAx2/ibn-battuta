@@ -128,11 +128,30 @@ fn build_solver<'a>(instance: String, algorithm: Solver, params: &Vec<f64>) -> B
     match algorithm {
         Solver::GeneticAlgorithm => {
             let population_size = params[0] as usize;
-            let ga_choose_ratio = params[1];
-            let mutate_ratio = params[2];
-            let max_generations = params[3] as usize;
-            Box::new(GeneticAlgorithm::with_options(tsp, population_size, ga_choose_ratio, mutate_ratio, max_generations))
+            let elite_size = params[1] as usize;
+            let crossover_rate = params[2];
+            let mutation_rate = params[3];
+            let max_generations = params[4] as usize;
+            Box::new(GeneticAlgorithm::with_options(tsp, population_size,
+                                                    elite_size,
+                                                    crossover_rate,
+                                                    mutation_rate,
+                                                    max_generations, ))
         }
+
+        Solver::GeneticAlgorithm2Opt => {
+            let population_size = params[0] as usize;
+            let elite_size = params[1] as usize;
+            let crossover_rate = params[2];
+            let mutation_rate = params[3];
+            let max_generations = params[4] as usize;
+            Box::new(GA2Opt::with_options(tsp, population_size,
+                                          elite_size,
+                                          crossover_rate,
+                                          mutation_rate,
+                                          max_generations, ))
+        }
+
         Solver::NearestNeighbor => {
             Box::new(NearestNeighbor::new(tsp))
         }
@@ -152,6 +171,15 @@ fn build_solver<'a>(instance: String, algorithm: Solver, params: &Vec<f64>) -> B
             // let cycles_per_temperature = params[4] as usize;
             Box::new(SimulatedAnnealing::new(tsp))
         }
+        Solver::SimulatedAnnealing2Opt => {
+            // let initial_temperature = params[0];
+            // let cooling_rate = params[1];
+            // let min_temperature = params[2];
+            // let max_iterations = params[3] as usize;
+            // let cycles_per_temperature = params[4] as usize;
+            Box::new(SA2Opt::new(tsp))
+        }
+
         Solver::AntColonySystem => {
             let alpha = params[0];
             let beta = params[1];
@@ -162,6 +190,17 @@ fn build_solver<'a>(instance: String, algorithm: Solver, params: &Vec<f64>) -> B
             let num_ants = 10;
             Box::new(AntColonySystem::with_options(tsp, alpha, beta, rho, q0, num_ants, max_iterations, candidate_list_size))
         }
+        Solver::AntColonySystem2Opt => {
+            let alpha = params[0];
+            let beta = params[1];
+            let rho = params[2];
+            let q0 = params[3];
+            let max_iterations = params[4] as usize;
+            let candidate_list_size = params[5] as usize;
+            let num_ants = 10;
+            Box::new(ACS2Opt::with_options(tsp, alpha, beta, rho, q0, num_ants, max_iterations, candidate_list_size))
+        }
+
         Solver::RedBlackAntColonySystem => {
             let alpha = params[0];
             let beta = params[1];
@@ -175,6 +214,21 @@ fn build_solver<'a>(instance: String, algorithm: Solver, params: &Vec<f64>) -> B
             Box::new(RedBlackACS::new(tsp, alpha, beta, rho_red, rho_black, q0,
                                       num_ants, max_iterations, candidate_list_size))
         }
+
+        Solver::RedBlackAntColonySystem2Opt => {
+            let alpha = params[0];
+            let beta = params[1];
+            let rho_red = params[2];
+            let rho_black = params[3];
+            let q0 = params[4];
+            let num_ants = 10;
+            let max_iterations = params[5] as usize;
+            let candidate_list_size = params[6] as usize;
+
+            Box::new(RBACS2Opt::with_options(tsp, alpha, beta, rho_red, rho_black, q0,
+                                             num_ants, max_iterations, candidate_list_size))
+        }
+
         Solver::AntSystem => {
             let alpha = params[0];
             let beta = params[1];
@@ -286,19 +340,27 @@ fn main() {
         Solver::NearestNeighbor,
         Solver::TwoOpt,
         Solver::SimulatedAnnealing,
-        // Solver::GeneticAlgorithm,
+        Solver::SimulatedAnnealing2Opt,
+        Solver::GeneticAlgorithm,
+        Solver::GeneticAlgorithm2Opt,
         Solver::AntColonySystem,
+        Solver::AntColonySystem2Opt,
         Solver::RedBlackAntColonySystem,
+        Solver::RedBlackAntColonySystem2Opt,
         // Solver::AntSystem,
     ];
 
     let params = vec![
         vec![], // NN
-        vec![], // 2-OPT
+        vec![], // NN+2-OPT
         vec![1000.0, 0.999, 0.0001, 1000.0, 100.0], // SA
-        // vec![25.0, 0.2, 0.05, 500.0], // GA
+        vec![1000.0, 0.999, 0.0001, 1000.0, 100.0], // SA-2OPT
+        vec![100.0, 5.0, 0.7, 0.01, 500.0], // GA
+        vec![100.0, 5.0, 0.7, 0.01, 500.0], // GA-2OPT
         vec![0.1, 2.0, 0.1, 0.9, 1000.0, 15.0], // ACS
+        vec![0.1, 2.0, 0.1, 0.9, 1000.0, 15.0], // ACS-2OPT
         vec![0.1, 2.0, 0.1, 0.2, 0.9, 1000.0, 15.0], // RB-ACS
+        vec![0.1, 2.0, 0.1, 0.2, 0.9, 1000.0, 15.0], // RB-ACS-2OPT
         // vec![0.1, 2.0, 0.1, 15.0, 1000.0], // AS
     ];
 

@@ -68,7 +68,7 @@ impl TspSolver for NearestNeighbor {
     }
 
     fn format_name(&self) -> String {
-        return "Nearest Neighbor".to_string();
+        return "NN".to_string();
     }
 }
 

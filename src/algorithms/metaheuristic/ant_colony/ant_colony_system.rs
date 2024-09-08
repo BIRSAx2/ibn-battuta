@@ -247,7 +247,7 @@ impl TspSolver for AntColonySystem {
     }
 
     fn format_name(&self) -> String {
-        format!("AntColonySystem")
+        format!("ACS")
     }
 }
 

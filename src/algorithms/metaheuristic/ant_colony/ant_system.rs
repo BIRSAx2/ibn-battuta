@@ -149,7 +149,7 @@ impl TspSolver for AntSystem {
     }
 
     fn format_name(&self) -> String {
-        format!("AntSystem")
+        format!("AS")
     }
 }
 

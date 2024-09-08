@@ -205,7 +205,7 @@ impl TspSolver for GeneticAlgorithm {
     }
 
     fn format_name(&self) -> String {
-        format!("Improved Genetic Algorithm")
+        format!("GA")
     }
 }
 

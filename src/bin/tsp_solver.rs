@@ -154,19 +154,19 @@
 //         Algorithm::NearestNeighbor => Box::new(NearestNeighbor::new(tsp)),
 //         Algorithm::TwoOpt => Box::new(TwoOpt::new(tsp)),
 //         Algorithm::SimulatedAnnealing { initial_temp, cooling_rate, min_temp, max_iter, cycles_per_temp } => {
-//             Box::new(SimulatedAnnealing::with_options(tsp, initial_temp, cooling_rate, min_temp, max_iter, cycles_per_temp))
+//             Box::new(SimulatedAnnealing::new(tsp, initial_temp, cooling_rate, min_temp, max_iter, cycles_per_temp))
 //         }
 //         Algorithm::GeneticAlgorithm { pop_size, tournament_size, mutation_rate, max_gen } => {
-//             Box::new(GeneticAlgorithm::with_options(tsp, pop_size, tournament_size, mutation_rate, max_gen))
+//             Box::new(GeneticAlgorithm::new(tsp, pop_size, tournament_size, mutation_rate, max_gen))
 //         }
 //         Algorithm::AntColonySystem { alpha, beta, rho, q0, max_iter } => {
-//             Box::new(AntColonySystem::with_options(tsp, alpha, beta, rho, q0, 20, max_iter, 15))
+//             Box::new(AntColonySystem::new(tsp, alpha, beta, rho, q0, 20, max_iter, 15))
 //         }
 //         Algorithm::RedBlackACS { alpha, beta, rho_red, rho_black, q0, num_ants, max_iter } => {
 //             Box::new(RedBlackACS::new(tsp, alpha, beta, rho_red, rho_black, q0, num_ants, max_iter, 15))
 //         }
 //         Algorithm::AntSystem { alpha, beta, rho, num_ants, max_iter } => {
-//             Box::new(AntSystem::with_options(tsp, alpha, beta, rho, num_ants, max_iter))
+//             Box::new(AntSystem::new(tsp, alpha, beta, rho, num_ants, max_iter))
 //         }
 //     };
 //

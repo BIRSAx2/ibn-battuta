@@ -69,7 +69,7 @@ impl TwoOpt {
 
                         if self.verbose {
                             println!(
-                                "2OPT: Swapped edges ({} - {}) and ({} - {}), with_options cost: {}",
+                                "2OPT: Swapped edges ({} - {}) and ({} - {}), new cost: {}",
                                 self.tour[i],
                                 self.tour[i + 1],
                                 self.tour[j],

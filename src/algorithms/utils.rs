@@ -1,6 +1,6 @@
+use crate::parser::Tsp;
 use std::fmt::{Display, Formatter};
 use std::time::Duration;
-use crate::parser::Tsp;
 #[derive(Clone, Debug, PartialEq, Copy)]
 pub enum Solver {
     BruteForce,
@@ -12,9 +12,13 @@ pub enum Solver {
     LinKernighan,
     SimulatedAnnealing,
     GeneticAlgorithm,
+    GeneticAlgorithm2Opt,
     AntSystem,
     AntColonySystem,
+    AntColonySystem2Opt,
     RedBlackAntColonySystem,
+    RedBlackAntColonySystem2Opt,
+    SimulatedAnnealing2Opt,
 }
 
 impl Display for Solver {
@@ -32,6 +36,10 @@ impl Display for Solver {
             Solver::AntSystem => write!(f, "AntSystem"),
             Solver::AntColonySystem => write!(f, "AntColonySystem"),
             Solver::RedBlackAntColonySystem => write!(f, "RedBlackAntColonySystem"),
+            Solver::RedBlackAntColonySystem2Opt => write!(f, "RedBlackAntColonySystem"),
+            Solver::GeneticAlgorithm2Opt => write!(f, "GeneticAlgorithm2Opt"),
+            Solver::AntColonySystem2Opt => write!(f, "AntColonySystem2Opt"),
+            Solver::SimulatedAnnealing2Opt => write!(f, "SimulatedAnnealing2Opt"),
         }
     }
 }

@@ -153,7 +153,7 @@ impl TspSolver for SimulatedAnnealing {
     }
 
     fn format_name(&self) -> String {
-        "SimulatedAnnealing".to_string()
+        "SA".to_string()
     }
 }
 

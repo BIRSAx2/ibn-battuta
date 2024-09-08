@@ -279,7 +279,7 @@ impl TspSolver for RedBlackACS {
     }
 
     fn format_name(&self) -> String {
-        format!("RedBlackACS")
+        format!("RBACS")
     }
 }
 
