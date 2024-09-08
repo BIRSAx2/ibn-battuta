@@ -2,6 +2,7 @@ use crate::algorithms::{Solution, TspSolver};
 use crate::parser::Tsp;
 use crate::NearestNeighbor;
 use rand::prelude::*;
+use std::cmp::Ordering;
 use std::f64;
 
 pub struct AntColonySystem {
@@ -10,6 +11,7 @@ pub struct AntColonySystem {
     heuristic: Vec<Vec<f64>>,
     best_tour: Vec<usize>,
     best_cost: f64,
+    candidate_lists: Vec<Vec<usize>>,
 
     // params
     alpha: f64,
@@ -19,11 +21,11 @@ pub struct AntColonySystem {
     q0: f64,
     num_ants: usize,
     max_iterations: usize,
+    candidate_list_size: usize,
 }
 
 impl AntColonySystem {
-    pub fn with_options(tsp: Tsp, alpha: f64, beta: f64, rho: f64, q0: f64, num_ants: usize, max_iterations: usize) -> AntColonySystem {
-        // Calculate tau0 as 1 / (n * L_NN)
+    pub fn with_options(tsp: Tsp, alpha: f64, beta: f64, rho: f64, q0: f64, num_ants: usize, max_iterations: usize, candidate_list_size: usize) -> AntColonySystem {
         let mut nn = NearestNeighbor::new(tsp.clone());
         let base_tour = nn.solve().total;
         let n = tsp.dim();
@@ -38,6 +40,7 @@ impl AntColonySystem {
             heuristic,
             best_tour: vec![],
             best_cost: f64::INFINITY,
+            candidate_lists: vec![],
 
             alpha,
             beta,
@@ -46,9 +49,11 @@ impl AntColonySystem {
             q0,
             num_ants,
             max_iterations,
+            candidate_list_size,
         };
 
         acs.initialize_heuristic();
+        acs.initialize_candidate_lists();
         acs
     }
 
@@ -69,6 +74,24 @@ impl AntColonySystem {
                     self.heuristic[i][j] = 1.0 / self.tsp.weight(i, j);
                 }
             }
+        }
+    }
+
+    fn initialize_candidate_lists(&mut self) {
+        let n = self.tsp.dim();
+        self.candidate_lists = vec![vec![]; n];
+
+        for i in 0..n {
+            let mut candidates: Vec<(usize, f64)> = (0..n)
+                .filter(|&j| i != j)
+                .map(|j| (j, self.tsp.weight(i, j)))
+                .collect();
+
+            candidates.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(Ordering::Equal));
+            self.candidate_lists[i] = candidates.into_iter()
+                .take(self.candidate_list_size)
+                .map(|(j, _)| j)
+                .collect();
         }
     }
 
@@ -105,25 +128,48 @@ impl AntColonySystem {
     }
 
     fn select_best_city(&self, current_city: usize, visited: &[bool]) -> usize {
-        (0..self.tsp.dim())
-            .filter(|&city| !visited[city])
-            .max_by(|&a, &b| {
+        self.candidate_lists[current_city]
+            .iter()
+            .filter(|&&city| !visited[city])
+            .max_by(|&&a, &&b| {
                 let score_a = self.pheromones[current_city][a] * self.heuristic[current_city][a].powf(self.beta);
                 let score_b = self.pheromones[current_city][b] * self.heuristic[current_city][b].powf(self.beta);
                 score_a.partial_cmp(&score_b).unwrap()
             })
-            .unwrap()
+            .cloned()
+            .unwrap_or_else(|| {
+                // If all candidates are visited, choose the best among all unvisited cities
+                (0..self.tsp.dim())
+                    .filter(|&city| !visited[city])
+                    .max_by(|&a, &b| {
+                        let score_a = self.pheromones[current_city][a] * self.heuristic[current_city][a].powf(self.beta);
+                        let score_b = self.pheromones[current_city][b] * self.heuristic[current_city][b].powf(self.beta);
+                        score_a.partial_cmp(&score_b).unwrap()
+                    })
+                    .unwrap()
+            })
     }
 
     fn select_probabilistic_city(&self, current_city: usize, visited: &[bool], rng: &mut ThreadRng) -> usize {
         let mut probabilities = vec![0.0; self.tsp.dim()];
         let mut total = 0.0;
 
-        for (city, &visited) in visited.iter().enumerate() {
-            if !visited {
+        for &city in &self.candidate_lists[current_city] {
+            if !visited[city] {
                 let probability = self.pheromones[current_city][city] * self.heuristic[current_city][city].powf(self.beta);
                 probabilities[city] = probability;
                 total += probability;
+            }
+        }
+
+        if total == 0.0 {
+            // If all candidates are visited, consider all unvisited cities
+            for city in 0..self.tsp.dim() {
+                if !visited[city] {
+                    let probability = self.pheromones[current_city][city] * self.heuristic[current_city][city].powf(self.beta);
+                    probabilities[city] = probability;
+                    total += probability;
+                }
             }
         }
 
@@ -205,7 +251,6 @@ impl TspSolver for AntColonySystem {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use crate::algorithms::metaheuristic::ant_colony::ant_colony_system::AntColonySystem;
@@ -231,13 +276,12 @@ mod tests {
         ";
         let tsp = TspBuilder::parse_str(data).unwrap();
         let n = tsp.dim();
-        let mut solver = AntColonySystem::with_options(tsp, 0.1, 2.0, 0.1, 0.9, n, 1000);
+        let mut solver = AntColonySystem::with_options(tsp, 0.1, 2.0, 0.1, 0.9, n, 1000, 3);
 
         let solution = solver.solve();
 
         println!("{:?}", solution);
     }
-
 
     #[test]
     fn test_gr17() {
@@ -245,7 +289,7 @@ mod tests {
         let tsp = TspBuilder::parse_path(path).unwrap();
 
         let n = tsp.dim();
-        let mut solver = AntColonySystem::with_options(tsp, 0.1, 2.0, 0.1, 0.9, n, 1000);
+        let mut solver = AntColonySystem::with_options(tsp, 0.1, 2.0, 0.1, 0.9, n, 1000, 5);
         let solution = solver.solve();
 
         println!("{:?}", solution);
@@ -256,7 +300,7 @@ mod tests {
         let size = tsp.dim();
 
         let n = tsp.dim();
-        let mut solver = AntColonySystem::with_options(tsp, 0.1, 2.0, 0.1, 0.9, n, 1000);
+        let mut solver = AntColonySystem::with_options(tsp, 0.1, 2.0, 0.1, 0.9, 10, 1000, 15);
         let solution = solver.solve();
 
         println!("{:?}", solution);

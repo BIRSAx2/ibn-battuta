@@ -202,7 +202,7 @@ mod tests {
 
     #[test]
     fn test_gr120() {
-        let path = "data/tsplib/st70.tsp";
+        let path = "data/tsplib/pcb1173.tsp";
         let tsp = TspBuilder::parse_path(path).unwrap();
         test_instance(tsp);
     }
