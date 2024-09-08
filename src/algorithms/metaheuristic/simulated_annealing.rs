@@ -1,8 +1,6 @@
 use crate::algorithms::{Solution, TspSolver};
 use crate::parser::Tsp;
 use rand::prelude::*;
-use rand::prelude::*;
-use rand::prelude::*;
 use std::f64;
 
 pub struct SimulatedAnnealing {
@@ -82,7 +80,7 @@ impl SimulatedAnnealing {
             ].clone()
     }
 
-    fn compute_pathlen(&self, path: &Vec<usize>, tsp: &Tsp) -> f64 {
+    fn compute_pathlen(&self, path: &Vec<usize>, _tsp: &Tsp) -> f64 {
         let mut result = self.cost(*path.last().unwrap(), path[0]);
         for i in 0..path.len() - 1 {
             result += self.cost(path[i], path[i + 1]);
@@ -202,7 +200,7 @@ mod tests {
 
     #[test]
     fn test_gr120() {
-        let path = "data/tsplib/pcb1173.tsp";
+        let path = "data/tsplib/st70.tsp";
         let tsp = TspBuilder::parse_path(path).unwrap();
         test_instance(tsp);
     }

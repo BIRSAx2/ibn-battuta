@@ -4,6 +4,7 @@ use crate::NearestNeighbor;
 use rand::prelude::*;
 use std::{cmp::Ordering, f64, mem};
 
+#[allow(dead_code)]
 pub struct RedBlackACS {
     tsp: Tsp,
     pheromones_red: Vec<Vec<f64>>,
@@ -14,7 +15,7 @@ pub struct RedBlackACS {
     best_tour_black: Vec<usize>,
     best_cost_red: f64,
     best_cost_black: f64,
-    alpha: f64,
+    alpha: f64, // Used for pheromone influence
     beta: f64,
     rho_red: f64,
     rho_black: f64,
@@ -37,12 +38,12 @@ impl RedBlackACS {
         let nn_tour_length = NearestNeighbor::new(tsp.clone()).solve().total;
         let tau0 = 1.0 / (dim as f64 * nn_tour_length);
 
-        // Initialize pheromones
+        // Initialize pheromones inversely proportional to edge weights
         for i in 0..dim {
             for j in 0..dim {
                 if i != j {
-                    pheromones_red[i][j] = tau0;
-                    pheromones_black[i][j] = tau0;
+                    pheromones_red[i][j] = tau0 / tsp.weight(i, j);
+                    pheromones_black[i][j] = tau0 / tsp.weight(i, j);
                 }
             }
         }
@@ -106,6 +107,7 @@ impl RedBlackACS {
         let mut tour = vec![0; self.tsp.dim()];
         let mut visited = vec![false; self.tsp.dim()];
 
+        // Randomly select starting city
         tour[0] = rng.gen_range(0..self.tsp.dim());
         visited[tour[0]] = true;
 
@@ -123,22 +125,23 @@ impl RedBlackACS {
 
     fn select_next_city(&self, partial_tour: &[usize], visited: &[bool], rng: &mut ThreadRng, is_red: bool) -> usize {
         let current_city = partial_tour[partial_tour.len() - 1];
+        let pheromones = if is_red { &self.pheromones_red } else { &self.pheromones_black };
 
         if rng.gen::<f64>() < self.q0 {
-            self.select_best_city(current_city, visited, is_red)
+            // Use alpha in the best city selection
+            self.select_best_city(current_city, visited, pheromones)
         } else {
-            self.select_probabilistic_city(current_city, visited, rng, is_red)
+            self.select_probabilistic_city(current_city, visited, rng, pheromones)
         }
     }
 
-    fn select_best_city(&self, current_city: usize, visited: &[bool], is_red: bool) -> usize {
-        let pheromones = if is_red { &self.pheromones_red } else { &self.pheromones_black };
+    fn select_best_city(&self, current_city: usize, visited: &[bool], pheromones: &[Vec<f64>]) -> usize {
         self.candidate_lists[current_city]
             .iter()
             .filter(|&&city| !visited[city])
             .max_by(|&&a, &&b| {
-                let score_a = pheromones[current_city][a] * self.heuristic[current_city][a].powf(self.beta);
-                let score_b = pheromones[current_city][b] * self.heuristic[current_city][b].powf(self.beta);
+                let score_a = pheromones[current_city][a].powf(self.alpha) * self.heuristic[current_city][a].powf(self.beta);
+                let score_b = pheromones[current_city][b].powf(self.alpha) * self.heuristic[current_city][b].powf(self.beta);
                 score_a.partial_cmp(&score_b).unwrap()
             })
             .cloned()
@@ -146,22 +149,21 @@ impl RedBlackACS {
                 (0..self.tsp.dim())
                     .filter(|&city| !visited[city])
                     .max_by(|&a, &b| {
-                        let score_a = pheromones[current_city][a] * self.heuristic[current_city][a].powf(self.beta);
-                        let score_b = pheromones[current_city][b] * self.heuristic[current_city][b].powf(self.beta);
+                        let score_a = pheromones[current_city][a].powf(self.alpha) * self.heuristic[current_city][a].powf(self.beta);
+                        let score_b = pheromones[current_city][b].powf(self.alpha) * self.heuristic[current_city][b].powf(self.beta);
                         score_a.partial_cmp(&score_b).unwrap()
                     })
                     .unwrap()
             })
     }
 
-    fn select_probabilistic_city(&self, current_city: usize, visited: &[bool], rng: &mut ThreadRng, is_red: bool) -> usize {
-        let pheromones = if is_red { &self.pheromones_red } else { &self.pheromones_black };
+    fn select_probabilistic_city(&self, current_city: usize, visited: &[bool], rng: &mut ThreadRng, pheromones: &[Vec<f64>]) -> usize {
         let mut probabilities = vec![0.0; self.tsp.dim()];
         let mut total = 0.0;
 
         for &city in &self.candidate_lists[current_city] {
             if !visited[city] {
-                let probability = pheromones[current_city][city] * self.heuristic[current_city][city].powf(self.beta);
+                let probability = pheromones[current_city][city].powf(self.alpha) * self.heuristic[current_city][city].powf(self.beta);
                 probabilities[city] = probability;
                 total += probability;
             }
@@ -170,7 +172,7 @@ impl RedBlackACS {
         if total == 0.0 {
             for city in 0..self.tsp.dim() {
                 if !visited[city] {
-                    let probability = pheromones[current_city][city] * self.heuristic[current_city][city].powf(self.beta);
+                    let probability = pheromones[current_city][city].powf(self.alpha) * self.heuristic[current_city][city].powf(self.beta);
                     probabilities[city] = probability;
                     total += probability;
                 }
@@ -205,6 +207,7 @@ impl RedBlackACS {
         let deposit_red = 1.0 / self.best_cost_red;
         let deposit_black = 1.0 / self.best_cost_black;
 
+        // Update pheromones for the best two ants in each group
         for i in 0..self.best_tour_red.len() {
             let from = self.best_tour_red[i];
             let to = self.best_tour_red[(i + 1) % self.best_tour_red.len()];
@@ -312,7 +315,7 @@ mod tests {
 
     #[test]
     fn test_gr666() {
-        let path = "data/tsplib/pcb1173.tsp";
+        let path = "data/tsplib/a280.tsp";
         let tsp = TspBuilder::parse_path(path).unwrap();
         let mut solver = RedBlackACS::new(tsp, 1.0, 2.0, 0.1, 0.2, 0.9, 10, 1000, 15);
         let solution = solver.solve();

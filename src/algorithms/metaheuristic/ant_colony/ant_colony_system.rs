@@ -299,7 +299,7 @@ mod tests {
     fn test_instance(tsp: Tsp) {
         let size = tsp.dim();
 
-        let n = tsp.dim();
+        // let n = tsp.dim();
         let mut solver = AntColonySystem::with_options(tsp, 0.1, 2.0, 0.1, 0.9, 10, 1000, 15);
         let solution = solver.solve();
 
