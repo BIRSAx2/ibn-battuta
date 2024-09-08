@@ -1,118 +1,153 @@
-use crate::algorithms::NearestNeighbor;
 use crate::algorithms::{Solution, TspSolver};
 use crate::parser::Tsp;
+use rand::prelude::*;
+use rand::prelude::*;
 use rand::prelude::*;
 use std::f64;
 
 pub struct SimulatedAnnealing {
     tsp: Tsp,
-    tour: Vec<usize>,
-    cost: f64,
-    initial_temperature: f64,
-    cooling_rate: f64,
-    min_temperature: f64,
-    max_temperature_changes: usize,
-    cycles_per_temperature: usize,
+    fire: Vec<usize>,
+    best_path: Vec<usize>,
+    best_length: f64,
+    t0: f64,
+    tend: f64,
+    rate: f64,
+    iter_x: Vec<usize>,
+    iter_y: Vec<f64>,
 }
 
 impl SimulatedAnnealing {
-    pub fn with_options(
-        tsp: Tsp,
-        initial_temperature: f64,
-        cooling_rate: f64,
-        min_temperature: f64,
-        max_temperature_changes: usize,
-        cycles_per_temperature: usize,
-    ) -> SimulatedAnnealing {
-        SimulatedAnnealing {
-            tsp,
-            tour: vec![],
-            cost: 0.0,
-            initial_temperature,
-            cooling_rate,
-            min_temperature,
-            max_temperature_changes,
-            cycles_per_temperature,
-        }
+    pub fn new(tsp: Tsp) -> Self {
+        let num_city = tsp.dim();
+        let mut sa =
+            SimulatedAnnealing {
+                tsp: tsp.clone(),
+                fire: vec![],
+                best_path: vec![],
+                best_length: f64::MAX,
+                t0: 4000.0,
+                tend: 1e-3,
+                rate: 0.9995,
+                iter_x: vec![0],
+                iter_y: vec![0.0],
+            };
+
+        let fire = sa.greedy_init(&tsp, 100, num_city);
+        let init_pathlen = sa.compute_pathlen(&fire, &tsp);
+        sa.fire = fire.clone();
+        sa.best_path = fire;
+        sa.best_length = init_pathlen;
+        sa.iter_y[0] = init_pathlen;
+        sa
     }
 
-    fn initial_solution(&mut self) {
-        let solution = NearestNeighbor::new(self.tsp.clone()).solve();
-        self.tour = solution.tour;
-        self.cost = solution.total;
-    }
-
-    fn calculate_tour_cost(&self, tour: &Vec<usize>) -> f64 {
-        let mut total_cost = 0.0;
-        for i in 0..tour.len() {
-            let from = tour[i];
-            let to = tour[(i + 1) % tour.len()];
-            total_cost += self.cost(from, to);
-        }
-        total_cost
-    }
-
-    fn generate_neighbor(&self) -> Vec<usize> {
+    fn greedy_init(&self, tsp: &Tsp, num_total: usize, num_city: usize) -> Vec<usize> {
         let mut rng = rand::thread_rng();
-        let mut new_tour = self.tour.clone();
-        let i = rng.gen_range(0..new_tour.len());
-        let mut j = rng.gen_range(0..new_tour.len());
-        while j == i {
-            j = rng.gen_range(0..new_tour.len());
+        let mut result = Vec::new();
+
+        for _ in 0..num_total {
+            let mut rest: Vec<usize> = (0..num_city).collect();
+            let mut current = if result.len() < num_city {
+                result.len()
+            } else {
+                rng.gen_range(0..num_city)
+            };
+
+            let mut result_one = vec![current];
+            rest.retain(|&x| x != current);
+
+            while !rest.is_empty() {
+                let (tmp_choose, _) = rest.iter()
+                    .map(|&x| (x, self.cost(current, x)))
+                    .min_by(|a, b| a.1.partial_cmp(&b.1).unwrap())
+                    .unwrap();
+
+                current = tmp_choose;
+                result_one.push(tmp_choose);
+                rest.retain(|&x| x != tmp_choose);
+            }
+
+            result.push(result_one);
         }
-        new_tour.swap(i, j);
-        new_tour
+
+        let path_lens: Vec<f64> = result.iter()
+            .map(|path| self.compute_pathlen(path, tsp))
+            .collect();
+
+        result[path_lens.iter()
+            .enumerate()
+            .min_by(|a, b| a.1.partial_cmp(b.1).unwrap())
+            .unwrap().0
+            ].clone()
     }
 
-    fn acceptance_probability(old_cost: f64, new_cost: f64, temperature: f64) -> f64 {
-        f64::exp(-(new_cost - old_cost) / temperature)
+    fn compute_pathlen(&self, path: &Vec<usize>, tsp: &Tsp) -> f64 {
+        let mut result = self.cost(*path.last().unwrap(), path[0]);
+        for i in 0..path.len() - 1 {
+            result += self.cost(path[i], path[i + 1]);
+        }
+        result
+    }
+
+    fn get_new_fire(&self) -> Vec<usize> {
+        let mut rng = rand::thread_rng();
+        let mut new_fire = self.fire.clone();
+        let (a, b) = (rng.gen_range(0..new_fire.len()), rng.gen_range(0..new_fire.len()));
+        new_fire[a.min(b)..=a.max(b)].reverse();
+        new_fire
+    }
+
+    fn eval_fire(&self, raw: &Vec<usize>, get: &Vec<usize>, temp: f64) -> (Vec<usize>, f64) {
+        let len1 = self.compute_pathlen(raw, &self.tsp);
+        let len2 = self.compute_pathlen(get, &self.tsp);
+        let dc = len2 - len1;
+        let p = f64::max(1e-1, f64::exp(-dc / temp));
+
+        if len2 < len1 || rand::random::<f64>() <= p {
+            (get.clone(), len2)
+        } else {
+            (raw.clone(), len1)
+        }
+    }
+
+    pub fn sa(&mut self) -> (f64, Vec<usize>) {
+        let mut count = 0;
+        let mut t = self.t0;
+
+        while t > self.tend {
+            count += 1;
+            let tmp_new = self.get_new_fire();
+            let (new_fire, file_len) = self.eval_fire(&self.best_path, &tmp_new, t);
+
+            self.fire = new_fire;
+
+            if file_len < self.best_length {
+                self.best_length = file_len;
+                self.best_path = self.fire.clone();
+            }
+
+            t *= self.rate;
+
+            self.iter_x.push(count);
+            self.iter_y.push(self.best_length);
+        }
+
+        (self.best_length, self.best_path.clone())
     }
 }
 
 impl TspSolver for SimulatedAnnealing {
     fn solve(&mut self) -> Solution {
-        let mut rng = rand::thread_rng();
-        self.initial_solution();
-
-        let mut best_tour = self.tour.clone();
-        let mut best_cost = self.cost;
-
-        let mut temperature = self.initial_temperature;
-
-        for _ in 0..self.max_temperature_changes {
-            for _ in 0..self.cycles_per_temperature {
-                let new_tour = self.generate_neighbor();
-                let new_cost = self.calculate_tour_cost(&new_tour);
-
-                if SimulatedAnnealing::acceptance_probability(self.cost, new_cost, temperature) > rng.gen() {
-                    self.tour = new_tour;
-                    self.cost = new_cost;
-
-                    if self.cost < best_cost {
-                        best_tour = self.tour.clone();
-                        best_cost = self.cost;
-                    }
-                }
-            }
-
-            temperature *= self.cooling_rate;
-
-            if temperature < self.min_temperature {
-                break;
-            }
-        }
-
-        self.tour = best_tour;
-        self.cost = best_cost;
-
+        let (best_length, best_path) = self.sa();
         Solution {
-            tour: self.tour.clone(),
-            total: self.cost,
+            tour: best_path,
+            total: best_length,
         }
     }
 
     fn tour(&self) -> Vec<usize> {
-        self.tour.clone()
+        self.fire.clone()
     }
 
     fn cost(&self, from: usize, to: usize) -> f64 {
@@ -120,7 +155,7 @@ impl TspSolver for SimulatedAnnealing {
     }
 
     fn format_name(&self) -> String {
-        format!("SimulatedAnnealing")
+        "SimulatedAnnealing".to_string()
     }
 }
 
@@ -148,7 +183,7 @@ mod tests {
         EOF
         ";
         let tsp = TspBuilder::parse_str(data).unwrap();
-        let mut solver = SimulatedAnnealing::with_options(tsp.clone(), 100.0, 0.98, 1e-8, tsp.dim() * 100, 10);
+        let mut solver = SimulatedAnnealing::new(tsp.clone());
         let solution = solver.solve();
 
         println!("{:?}", solution);
@@ -167,15 +202,14 @@ mod tests {
 
     #[test]
     fn test_gr120() {
-        let path = "data/tsplib/berlin52.tsp";
+        let path = "data/tsplib/st70.tsp";
         let tsp = TspBuilder::parse_path(path).unwrap();
-
         test_instance(tsp);
     }
 
     fn test_instance(tsp: Tsp) -> Solution {
         let size = tsp.dim();
-        let mut solver = SimulatedAnnealing::with_options(tsp, 1000.0, 0.999, 0.0001, 1000, 100);
+        let mut solver = SimulatedAnnealing::new(tsp);
         let solution = solver.solve();
         println!("{:?}", solution);
         assert_eq!(solution.tour.len(), size);

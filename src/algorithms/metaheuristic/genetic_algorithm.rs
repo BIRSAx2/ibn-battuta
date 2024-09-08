@@ -2,14 +2,15 @@ use crate::algorithms::{Solution, TspSolver};
 use crate::parser::Tsp;
 use rand::prelude::*;
 use std::f64;
+
 pub struct GeneticAlgorithm {
     tsp: Tsp,
     population: Vec<Vec<usize>>,
     best_tour: Vec<usize>,
     best_cost: f64,
     population_size: usize,
-    tournament_size: usize,
-    mutation_rate: f64,
+    ga_choose_ratio: f64,
+    mutate_ratio: f64,
     max_generations: usize,
 }
 
@@ -17,12 +18,11 @@ impl GeneticAlgorithm {
     pub fn with_options(
         tsp: Tsp,
         population_size: usize,
-        tournament_size: usize,
-        mutation_rate: f64,
+        ga_choose_ratio: f64,
+        mutate_ratio: f64,
         max_generations: usize,
     ) -> GeneticAlgorithm {
         let population_size = population_size.max(2);  // Ensure at least 2 individuals
-        let tournament_size = tournament_size.min(population_size);  // Ensure tournament size doesn't exceed population size
 
         let mut ga = GeneticAlgorithm {
             tsp,
@@ -30,8 +30,8 @@ impl GeneticAlgorithm {
             best_tour: vec![],
             best_cost: f64::INFINITY,
             population_size,
-            tournament_size,
-            mutation_rate,
+            ga_choose_ratio,
+            mutate_ratio,
             max_generations,
         };
         ga.initialize_population();
@@ -45,78 +45,139 @@ impl GeneticAlgorithm {
             tour.shuffle(&mut rng);
             self.population.push(tour);
         }
+        self.greedy_init();
+    }
+
+    fn greedy_init(&mut self) {
+        let num_city = self.tsp.dim();
+        let mut start_index = 0;
+        while self.population.len() < self.population_size {
+            let mut rest: Vec<usize> = (0..num_city).collect();
+            if start_index >= num_city {
+                start_index = rand::thread_rng().gen_range(0..num_city);
+                self.population.push(self.population[start_index].clone());
+                continue;
+            }
+            let mut current = start_index;
+            rest.retain(|&x| x != current);
+            let mut result_one = vec![current];
+            while !rest.is_empty() {
+                let (tmp_choose, _) = rest.iter()
+                    .map(|&x| (x, self.cost(current, x)))
+                    .min_by(|&(_, a), &(_, b)| a.partial_cmp(&b).unwrap())
+                    .unwrap();
+                current = tmp_choose;
+                result_one.push(tmp_choose);
+                rest.retain(|&x| x != tmp_choose);
+            }
+            self.population.push(result_one);
+            start_index += 1;
+        }
     }
 
     fn calculate_fitness(&self, tour: &[usize]) -> f64 {
-        let cost = self.calculate_tour_cost(tour);
-        1.0 / cost
+        1.0 / self.calculate_tour_cost(tour)
     }
 
-    fn select_parent(&self) -> &[usize] {
-        let mut rng = rand::thread_rng();
-        self.population
-            .choose_multiple(&mut rng, self.tournament_size)
-            .max_by(|&a, &b| {
-                self.calculate_fitness(a)
-                    .partial_cmp(&self.calculate_fitness(b))
-                    .unwrap_or(std::cmp::Ordering::Equal)
-            })
-            .expect("Population is empty")
+    fn ga_parent(&self, scores: &[f64]) -> (Vec<Vec<usize>>, Vec<f64>) {
+        let mut indices: Vec<usize> = (0..self.population.len()).collect();
+        indices.sort_by(|&a, &b| scores[b].partial_cmp(&scores[a]).unwrap());
+        let num_parents = (self.ga_choose_ratio * self.population.len() as f64) as usize;
+        let parents: Vec<Vec<usize>> = indices.iter().take(num_parents)
+            .map(|&i| self.population[i].clone())
+            .collect();
+        let parents_score: Vec<f64> = indices.iter().take(num_parents)
+            .map(|&i| scores[i])
+            .collect();
+        (parents, parents_score)
     }
 
-    fn crossover(&self, parent1: &[usize], parent2: &[usize]) -> Vec<usize> {
+    fn ga_choose<'a>(&self, genes_score: &[f64], genes_choose: &'a [Vec<usize>]) -> (&'a Vec<usize>, &'a Vec<usize>) {
+        let sum_score: f64 = genes_score.iter().sum();
+        let score_ratio: Vec<f64> = genes_score.iter().map(|&s| s / sum_score).collect();
         let mut rng = rand::thread_rng();
-        let mut child = vec![usize::MAX; self.tsp.dim()];
-        let start = rng.gen_range(0..self.tsp.dim());
-        let end = rng.gen_range(start..self.tsp.dim());
+        let mut choose = |ratio: &[f64]| {
+            let mut rand = rng.gen::<f64>();
+            ratio.iter().position(|&r| {
+                rand -= r;
+                rand < 0.0
+            }).unwrap()
+        };
+        let index1 = choose(&score_ratio);
+        let index2 = choose(&score_ratio);
+        (&genes_choose[index1], &genes_choose[index2])
+    }
 
-        child[start..=end].copy_from_slice(&parent1[start..=end]);
+    fn ga_cross(&self, x: &[usize], y: &[usize]) -> (Vec<usize>, Vec<usize>) {
+        let len = x.len();
+        let mut rng = rand::thread_rng();
+        let mut order: Vec<usize> = (0..len).collect();
+        order.shuffle(&mut rng);
+        let (start, end) = (order[0].min(order[1]), order[0].max(order[1]));
 
-        let mut j = (end + 1) % self.tsp.dim();
-        for &city in parent2.iter().chain(parent2.iter()) {
-            if !child[start..=end].contains(&city) {
-                child[j] = city;
-                j = (j + 1) % self.tsp.dim();
-                if j == start {
-                    break;
+        let mut new_x = vec![usize::MAX; len];
+        let mut new_y = vec![usize::MAX; len];
+        new_x[start..=end].copy_from_slice(&y[start..=end]);
+        new_y[start..=end].copy_from_slice(&x[start..=end]);
+
+        let fill = |new: &mut Vec<usize>, old: &[usize]| {
+            let mut j = (end + 1) % len;
+            for &city in old.iter().chain(old.iter()) {
+                if !new[start..=end].contains(&city) {
+                    new[j] = city;
+                    j = (j + 1) % len;
+                    if j == start {
+                        break;
+                    }
                 }
             }
-        }
+        };
 
-        child
+        fill(&mut new_x, x);
+        fill(&mut new_y, y);
+
+        (new_x, new_y)
     }
 
-    fn mutate(&self, tour: &mut [usize]) {
+    fn ga_mutate(&self, gene: &mut Vec<usize>) {
         let mut rng = rand::thread_rng();
-        if rng.gen::<f64>() < self.mutation_rate {
-            let i = rng.gen_range(0..tour.len());
-            let j = rng.gen_range(0..tour.len());
-            tour.swap(i, j);
+        if rng.gen::<f64>() < self.mutate_ratio {
+            let len = gene.len();
+            let (start, end) = (rng.gen_range(0..len), rng.gen_range(0..len));
+            gene[start.min(end)..=start.max(end)].reverse();
         }
     }
 
-    fn evolve_population(&mut self) {
-        let mut new_population = Vec::with_capacity(self.population_size);
+    fn ga(&mut self) -> (Vec<usize>, f64) {
+        let scores: Vec<f64> = self.population.iter()
+            .map(|tour| self.calculate_fitness(tour))
+            .collect();
 
-        for _ in 0..self.population_size {
-            let parent1 = self.select_parent();
-            let parent2 = self.select_parent();
-            let mut child = self.crossover(parent1, parent2);
-            self.mutate(&mut child);
-            new_population.push(child);
-        }
+        let (parents, parents_score) = self.ga_parent(&scores);
+        let mut tmp_best_one = parents[0].clone();
+        let mut tmp_best_score = parents_score[0];
 
-        self.population = new_population;
-    }
+        let mut fruits = parents.clone();
+        while fruits.len() < self.population_size {
+            let (gene_x, gene_y) = self.ga_choose(&parents_score, &parents);
+            let (mut gene_x_new, mut gene_y_new) = self.ga_cross(gene_x, gene_y);
 
-    fn update_best_solution(&mut self) {
-        for tour in &self.population {
-            let cost = self.calculate_tour_cost(tour);
-            if cost < self.best_cost {
-                self.best_tour = tour.clone();
-                self.best_cost = cost;
+            self.ga_mutate(&mut gene_x_new);
+            self.ga_mutate(&mut gene_y_new);
+
+            let x_adp = self.calculate_fitness(&gene_x_new);
+            let y_adp = self.calculate_fitness(&gene_y_new);
+
+            if x_adp > y_adp && !fruits.contains(&gene_x_new) {
+                fruits.push(gene_x_new);
+            } else if !fruits.contains(&gene_y_new) {
+                fruits.push(gene_y_new);
             }
         }
+
+        self.population = fruits;
+
+        (tmp_best_one, tmp_best_score)
     }
 
     fn calculate_tour_cost(&self, tour: &[usize]) -> f64 {
@@ -129,14 +190,21 @@ impl GeneticAlgorithm {
 
 impl TspSolver for GeneticAlgorithm {
     fn solve(&mut self) -> Solution {
+        let mut best_list = Vec::new();
+        let mut best_score = f64::NEG_INFINITY;
+
         for _ in 0..self.max_generations {
-            self.evolve_population();
-            self.update_best_solution();
+            let (tmp_best_one, tmp_best_score) = self.ga();
+            if tmp_best_score > best_score {
+                best_score = tmp_best_score;
+                best_list = tmp_best_one;
+            }
         }
 
+        let best_cost = 1.0 / best_score;
         Solution {
-            tour: self.best_tour.clone(),
-            total: self.best_cost,
+            tour: best_list,
+            total: best_cost,
         }
     }
 
@@ -178,7 +246,7 @@ mod tests {
         let tsp = TspBuilder::parse_str(data).unwrap();
         let dim = tsp.dim();
 
-        let mut solver = GeneticAlgorithm::with_options(tsp, 100, 5, 0.01, 1000);
+        let mut solver = GeneticAlgorithm::with_options(tsp, 25, 0.2, 0.05, 500);
         let solution = solver.solve();
 
         println!("Example solution: {:?}", solution);
@@ -193,10 +261,9 @@ mod tests {
         run_on_instance(tsp);
     }
 
-
     #[test]
     fn test_berlin52() {
-        let path = "data/tsplib/berlin52.tsp";
+        let path = "data/tsplib/st70.tsp";
         let tsp = TspBuilder::parse_path(path).unwrap();
 
         run_on_instance(tsp);
@@ -205,7 +272,7 @@ mod tests {
     fn run_on_instance(tsp: Tsp) {
         let m = tsp.dim();
 
-        let mut solver = GeneticAlgorithm::with_options(tsp, 100, 5, 0.01, 1000);
+        let mut solver = GeneticAlgorithm::with_options(tsp, 25, 0.2, 0.05, 500);
         let solution = solver.solve();
 
         println!("Solution: {:?}", solution);

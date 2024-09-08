@@ -187,7 +187,7 @@ mod tests {
 
     #[test]
     fn test_gr17() {
-        let path = "data/tsplib/bier127.tsp";
+        let path = "data/tsplib/st70.tsp";
         let tsp = TspBuilder::parse_path(path).unwrap();
 
         let size = tsp.dim();
