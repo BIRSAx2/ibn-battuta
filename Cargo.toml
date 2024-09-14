@@ -13,12 +13,7 @@ rand = "0.8.5"
 log = "0.4.20"
 rayon = "1.10.0"
 clap = { version = "4.0", features = ["derive"] }
+
 [dev-dependencies]
-criterion = "0.5.1"
 approx = "0.5.0"
-petgraph = "0.6.5"
 
-
-[[bench]]
-name = "benchmarks"
-harness = false
