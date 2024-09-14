@@ -1,8 +1,15 @@
 [package]
 name = "ibn_battuta"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 include = ["/src", "/benches", "/data"]
+license = "MIT OR Apache-2.0"
+description = "A Rust Library for Solving the Travelling Salesman Problem (TSP)"
+keywords = ["tsp", "genetic_algorithms", "simulated_annealing", "ACS", "RB-ACS"]
+categories = ["algorithms"]
+homepage = "https://github.com//BIRSAx2/ibn-battuta"
+repository = "https://github.com//BIRSAx2/ibn-battuta"
+readme = "README.md"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -16,4 +23,3 @@ clap = { version = "4.0", features = ["derive"] }
 
 [dev-dependencies]
 approx = "0.5.0"
-

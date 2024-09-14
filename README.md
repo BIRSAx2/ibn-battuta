@@ -38,8 +38,7 @@ Add the following to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-ibn-battuta = { git = "https://github.com/your-username/ibn-battuta" }
-rayon = "1.5"
+ibn_battuta = "0.1.0"
 ```
 
 Then, in your Rust code:
