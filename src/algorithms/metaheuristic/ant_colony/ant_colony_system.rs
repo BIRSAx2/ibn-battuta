@@ -326,7 +326,7 @@ impl AntColonySystem {
         // Evaporation on all edges
         for i in 0..self.tsp.dim() {
             for j in 0..self.tsp.dim() {
-                self.pheromones[i][j] *= 1.0 - self.alpha;
+                self.pheromones[i][j] *= 1.0 - self.rho;
             }
         }
 
@@ -335,10 +335,14 @@ impl AntColonySystem {
             let from = self.best_tour[i];
             let to = self.best_tour[(i + 1) % self.best_tour.len()];
 
-            self.pheromones[from][to] += self.alpha * deposit;
+            self.pheromones[from][to] += self.rho * deposit;
             self.pheromones[to][from] = self.pheromones[from][to];
-            self.pheromone_scores[from][to] = self.pheromones[from][to].powf(self.alpha);
-            self.pheromone_scores[to][from] = self.pheromone_scores[from][to];
+        }
+
+        for i in 0..self.tsp.dim() {
+            for j in 0..self.tsp.dim() {
+                self.pheromone_scores[i][j] = self.pheromones[i][j].powf(self.alpha);
+            }
         }
     }
 
@@ -473,6 +477,42 @@ mod tests {
         let pheromone_before = solver.pheromones[0][1];
         solver.global_pheromone_update();
         assert!(solver.pheromones[0][1] != pheromone_before);
+    }
+
+    #[test]
+    fn test_global_update_refreshes_cached_scores() {
+        let data = "
+        NAME : example
+        TYPE : TSP
+        DIMENSION : 5
+        EDGE_WEIGHT_TYPE: EUC_2D
+        NODE_COORD_SECTION
+          1 1.2 3.4
+          2 5.6 7.8
+          3 3.4 5.6
+          4 9.0 1.2
+          5 6.0 2.2
+        EOF
+        ";
+        let tsp = TspBuilder::parse_str(data).unwrap();
+        let mut solver = AntColonySystem::with_options(tsp, 0.7, 2.0, 0.2, 0.9, 5, 100, 3);
+
+        solver.best_tour = vec![0, 1, 2, 3, 4];
+        solver.best_cost = solver.calculate_tour_cost(&solver.best_tour);
+        let edge = (0, 4);
+        let old_pheromone = solver.pheromones[edge.0][edge.1];
+        let old_score = solver.pheromone_scores[edge.0][edge.1];
+
+        solver.global_pheromone_update();
+
+        assert_ne!(solver.pheromones[edge.0][edge.1], old_pheromone);
+        assert_ne!(solver.pheromone_scores[edge.0][edge.1], old_score);
+        assert!(
+            (solver.pheromone_scores[edge.0][edge.1]
+                - solver.pheromones[edge.0][edge.1].powf(solver.alpha))
+            .abs()
+                < 1e-12
+        );
     }
 
     #[test]

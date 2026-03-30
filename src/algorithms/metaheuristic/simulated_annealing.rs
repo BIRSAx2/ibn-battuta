@@ -13,6 +13,7 @@ use std::f64;
 pub struct SimulatedAnnealing {
     tsp: Tsp,
     fire: Vec<usize>,
+    fire_length: f64,
     best_path: Vec<usize>,
     best_length: f64,
     t0: f64,
@@ -68,11 +69,12 @@ impl SimulatedAnnealing {
         let mut sa = SimulatedAnnealing {
             tsp: tsp.clone(),
             fire: vec![],
+            fire_length: f64::MAX,
             best_path: vec![],
             best_length: f64::MAX,
             t0: 4000.0,
             tend: 1e-3,
-            rate: 0.9995,
+            rate: 0.9997,
             iter_x: vec![0],
             iter_y: vec![0.0],
             rng: StdRng::seed_from_u64(seed),
@@ -82,6 +84,7 @@ impl SimulatedAnnealing {
         let fire = sa.greedy_init(&tsp, 100, num_city);
         let init_pathlen = sa.compute_pathlen(&fire, &tsp);
         sa.fire = fire.clone();
+        sa.fire_length = init_pathlen;
         sa.best_path = fire;
         sa.best_length = init_pathlen;
         sa.iter_y[0] = init_pathlen;
@@ -164,41 +167,60 @@ impl SimulatedAnnealing {
         result
     }
 
-    /// Generates a new solution by reversing a random sub-path.
-    ///
-    /// # Returns
-    ///
-    /// A new solution vector.
-    fn get_new_fire(&mut self) -> Vec<usize> {
-        let mut new_fire = self.fire.clone();
-        let (a, b) = (
-            self.rng.gen_range(0..new_fire.len()),
-            self.rng.gen_range(0..new_fire.len()),
-        );
-        new_fire[a.min(b)..=a.max(b)].reverse();
-        new_fire
+    fn sample_move(&mut self) -> (usize, usize) {
+        let len = self.fire.len();
+        let a = self.rng.gen_range(0..len);
+        let b = self.rng.gen_range(0..len);
+        (a.min(b), a.max(b))
+    }
+
+    fn reversed_segment_length(&self, start: usize, end: usize) -> f64 {
+        if start == end {
+            return self.fire_length;
+        }
+
+        let path = &self.fire;
+        let len = path.len();
+        if start == 0 && end + 1 == len {
+            return self.fire_length;
+        }
+
+        let prev = if start == 0 { len - 1 } else { start - 1 };
+        let next = (end + 1) % len;
+
+        let mut removed = self.cost(path[prev], path[start]) + self.cost(path[end], path[next]);
+        let mut added = self.cost(path[prev], path[end]) + self.cost(path[start], path[next]);
+
+        for idx in start..end {
+            removed += self.cost(path[idx], path[idx + 1]);
+            added += self.cost(path[idx + 1], path[idx]);
+        }
+
+        self.fire_length - removed + added
     }
 
     /// Evaluates a new solution and decides whether to accept it.
     ///
     /// # Arguments
     ///
-    /// * `raw` - The current solution.
-    /// * `get` - The new solution to evaluate.
+    /// * `start` - The start of the reversed segment.
+    /// * `end` - The end of the reversed segment.
     /// * `temp` - The current temperature.
     ///
     /// # Returns
     ///
-    /// A tuple containing the accepted solution and its length.
-    fn eval_fire(&mut self, get: &[usize], temp: f64) -> (Vec<usize>, f64) {
-        let len2 = self.compute_pathlen(get, &self.tsp);
-        let dc = len2 - self.best_length;
-        let p = f64::max(1e-1, f64::exp(-dc / temp));
+    /// `true` if the move was accepted.
+    fn eval_fire(&mut self, start: usize, end: usize, temp: f64) -> bool {
+        let len2 = self.reversed_segment_length(start, end);
+        let dc = len2 - self.fire_length;
+        let accept = dc <= 0.0 || self.rng.gen::<f64>() <= f64::exp(-dc / temp);
 
-        if len2 < self.best_length || self.rng.gen::<f64>() <= p {
-            (get.to_vec(), len2)
+        if accept {
+            self.fire[start..=end].reverse();
+            self.fire_length = len2;
+            true
         } else {
-            (self.best_path.clone(), self.best_length)
+            false
         }
     }
 
@@ -213,14 +235,10 @@ impl SimulatedAnnealing {
 
         while t > self.tend {
             count += 1;
-            let tmp_new = self.get_new_fire();
-            let (new_fire, file_len) = self.eval_fire(&tmp_new, t);
-
-            self.fire = new_fire;
-
-            if file_len < self.best_length {
+            let (start, end) = self.sample_move();
+            if self.eval_fire(start, end, t) && self.fire_length < self.best_length {
                 self.best_path = self.fire.clone();
-                self.best_length = file_len;
+                self.best_length = self.fire_length;
             }
 
             t *= self.rate;
@@ -354,7 +372,7 @@ mod tests {
     }
 
     #[test]
-    fn test_get_new_fire() {
+    fn test_reversed_segment_length_matches_full_recompute() {
         let data = "
         NAME : example
         TYPE : TSP
@@ -371,9 +389,20 @@ mod tests {
         let tsp = TspBuilder::parse_str(data).unwrap();
         let mut sa = SimulatedAnnealing::new(tsp);
         sa.fire = vec![0, 1, 2, 3, 4];
+        sa.fire_length = sa.compute_pathlen(&sa.fire, &sa.tsp);
 
-        let new_fire = sa.get_new_fire();
-        assert_eq!(new_fire.len(), 5);
+        let start = 1;
+        let end = 3;
+        let candidate_len = sa.reversed_segment_length(start, end);
+
+        let mut recomputed = sa.fire.clone();
+        recomputed[start..=end].reverse();
+
+        assert_eq!(recomputed.len(), 5);
+        assert!(
+            (candidate_len - sa.compute_pathlen(&recomputed, &sa.tsp)).abs() < 1e-9,
+            "local segment evaluation must match full path recomputation"
+        );
     }
 
     #[test]

@@ -38,6 +38,7 @@ use std::f64;
 pub struct GeneticAlgorithm {
     tsp: Tsp,
     population: Vec<Vec<usize>>,
+    population_costs: Vec<f64>,
     population_size: usize,
     elite_size: usize,
     crossover_rate: f64,
@@ -48,6 +49,9 @@ pub struct GeneticAlgorithm {
 }
 
 impl GeneticAlgorithm {
+    const TOURNAMENT_SIZE: usize = 5;
+    const GREEDY_SEED_RATIO: f64 = 0.5;
+
     /// Creates a new `GeneticAlgorithm` instance with the specified parameters.
     ///
     /// # Arguments
@@ -112,6 +116,7 @@ impl GeneticAlgorithm {
         let mut ga = GeneticAlgorithm {
             tsp,
             population: Vec::with_capacity(population_size),
+            population_costs: Vec::with_capacity(population_size),
             population_size,
             elite_size,
             crossover_rate,
@@ -130,55 +135,49 @@ impl GeneticAlgorithm {
 
     /// Initializes the population with random tours and applies a greedy initialization.
     fn initialize_population(&mut self) {
-        for _ in 0..self.population_size {
-            let mut tour: Vec<usize> = (0..self.tsp.dim()).collect();
-            tour.shuffle(&mut self.rng);
+        let greedy_count = ((self.population_size as f64 * Self::GREEDY_SEED_RATIO).round()
+            as usize)
+            .max(1)
+            .min(self.tsp.dim());
+
+        for start_index in 0..greedy_count {
+            let (tour, cost) = self.build_greedy_tour(start_index);
             self.population.push(tour);
+            self.population_costs.push(cost);
         }
-        self.greedy_init();
-    }
 
-    fn greedy_init(&mut self) {
-        let num_city = self.tsp.dim();
-        let mut start_index = 0;
         while self.population.len() < self.population_size {
-            let mut rest: Vec<usize> = (0..num_city).collect();
-            if start_index >= num_city {
-                start_index = self.rng.gen_range(0..num_city);
-                self.population.push(self.population[start_index].clone());
-                continue;
-            }
-            let mut current = start_index;
-            rest.retain(|&x| x != current);
-            let mut result_one = vec![current];
-            while !rest.is_empty() {
-                let (tmp_choose, _) = rest
-                    .iter()
-                    .map(|&x| (x, self.cost(current, x)))
-                    .min_by(|&(_, a), &(_, b)| a.partial_cmp(&b).unwrap())
-                    .unwrap();
-                current = tmp_choose;
-                result_one.push(tmp_choose);
-                rest.retain(|&x| x != tmp_choose);
-            }
-            self.population.push(result_one);
-            start_index += 1;
+            let (tour, cost) = self.random_tour();
+            self.population.push(tour);
+            self.population_costs.push(cost);
         }
     }
 
-    /// Calculates the fitness of a given tour.
-    ///
-    /// The fitness is the inverse of the tour cost, so lower cost tours have higher fitness.
-    ///
-    /// # Arguments
-    ///
-    /// * `tour` - A slice representing a tour of cities.
-    ///
-    /// # Returns
-    ///
-    /// The fitness value of the tour.
-    fn calculate_fitness(&self, tour: &[usize]) -> f64 {
-        1.0 / self.calculate_tour_cost(tour)
+    fn random_tour(&mut self) -> (Vec<usize>, f64) {
+        let mut tour: Vec<usize> = (0..self.tsp.dim()).collect();
+        tour.shuffle(&mut self.rng);
+        let cost = self.calculate_tour_cost(&tour);
+        (tour, cost)
+    }
+
+    fn build_greedy_tour(&self, start_index: usize) -> (Vec<usize>, f64) {
+        let num_city = self.tsp.dim();
+        let mut rest: Vec<usize> = (0..num_city).collect();
+        let mut current = start_index;
+        rest.retain(|&x| x != current);
+        let mut result_one = vec![current];
+        while !rest.is_empty() {
+            let (tmp_choose, _) = rest
+                .iter()
+                .map(|&x| (x, self.cost(current, x)))
+                .min_by(|&(_, a), &(_, b)| a.partial_cmp(&b).unwrap())
+                .unwrap();
+            current = tmp_choose;
+            result_one.push(tmp_choose);
+            rest.retain(|&x| x != tmp_choose);
+        }
+        let result_cost = self.calculate_tour_cost(&result_one);
+        (result_one, result_cost)
     }
 
     /// Calculates the total cost of a given tour.
@@ -195,24 +194,43 @@ impl GeneticAlgorithm {
             + self.cost(*tour.last().unwrap(), tour[0])
     }
 
-    fn select_parents(&mut self, fitnesses: &[f64]) -> Vec<usize> {
-        let total_fitness: f64 = fitnesses.iter().sum();
+    fn select_parents(&mut self) -> Vec<usize> {
         let mut selected = Vec::with_capacity(self.population_size);
+        let tournament_size = Self::TOURNAMENT_SIZE.min(self.population.len()).max(1);
 
         for _ in 0..self.population_size {
-            let mut r = self.rng.gen::<f64>() * total_fitness;
-            let mut chosen = fitnesses.len().saturating_sub(1);
-            for (i, &fitness) in fitnesses.iter().enumerate() {
-                r -= fitness;
-                if r <= 0.0 {
-                    chosen = i;
-                    break;
+            let mut chosen = self.rng.gen_range(0..self.population.len());
+            let mut chosen_cost = self.population_costs[chosen];
+            for _ in 1..tournament_size {
+                let challenger = self.rng.gen_range(0..self.population.len());
+                let challenger_cost = self.population_costs[challenger];
+                if challenger_cost < chosen_cost {
+                    chosen = challenger;
+                    chosen_cost = challenger_cost;
                 }
             }
             selected.push(chosen);
         }
 
         selected
+    }
+
+    fn choose_parent_pair(&mut self, parents: &[usize]) -> (usize, usize) {
+        let parent1_idx = parents[self.rng.gen_range(0..parents.len())];
+        let mut parent2_idx = parents[self.rng.gen_range(0..parents.len())];
+
+        for _ in 0..4 {
+            if parent1_idx != parent2_idx {
+                break;
+            }
+            parent2_idx = parents[self.rng.gen_range(0..parents.len())];
+        }
+
+        if parent1_idx == parent2_idx && self.population.len() > 1 {
+            parent2_idx = (parent1_idx + 1) % self.population.len();
+        }
+
+        (parent1_idx, parent2_idx)
     }
 
     /// Performs crossover between two parent tours to produce a child tour.
@@ -260,7 +278,9 @@ impl GeneticAlgorithm {
         if rng.gen::<f64>() < mutation_rate {
             let i = rng.gen_range(0..tour.len());
             let j = rng.gen_range(0..tour.len());
-            tour.swap(i, j);
+            if i != j {
+                tour.swap(i, j);
+            }
         }
     }
 
@@ -269,28 +289,35 @@ impl GeneticAlgorithm {
     /// # Returns
     ///
     /// The best tour found in the current generation.
-    fn evolve(&mut self) -> Vec<usize> {
-        let fitnesses: Vec<f64> = self
-            .population
-            .iter()
-            .map(|tour| self.calculate_fitness(tour))
-            .collect();
-
+    fn evolve(&mut self) -> (Vec<usize>, f64) {
         let mut next_generation = Vec::with_capacity(self.population_size);
+        let mut next_generation_costs = Vec::with_capacity(self.population_size);
+        let mut generation_best_tour = Vec::new();
+        let mut generation_best_cost = f64::INFINITY;
 
         // Elitism
-        let mut indexed_fitnesses: Vec<(usize, f64)> =
-            fitnesses.iter().enumerate().map(|(i, &f)| (i, f)).collect();
-        indexed_fitnesses.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(Ordering::Equal));
-        for &(index, _) in indexed_fitnesses.iter().take(self.elite_size) {
-            next_generation.push(self.population[index].clone());
+        let mut indexed_costs: Vec<(usize, f64)> = self
+            .population_costs
+            .iter()
+            .enumerate()
+            .map(|(i, &cost)| (i, cost))
+            .collect();
+        indexed_costs.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(Ordering::Equal));
+        for &(index, _) in indexed_costs.iter().take(self.elite_size) {
+            let elite = self.population[index].clone();
+            let elite_cost = self.population_costs[index];
+            if elite_cost < generation_best_cost {
+                generation_best_cost = elite_cost;
+                generation_best_tour = elite.clone();
+            }
+            next_generation.push(elite);
+            next_generation_costs.push(elite_cost);
         }
 
-        let parents = self.select_parents(&fitnesses);
+        let parents = self.select_parents();
 
         while next_generation.len() < self.population_size {
-            let parent1_idx = parents[self.rng.gen_range(0..parents.len())];
-            let parent2_idx = parents[self.rng.gen_range(0..parents.len())];
+            let (parent1_idx, parent2_idx) = self.choose_parent_pair(&parents);
             let should_crossover = self.rng.gen::<f64>() < self.crossover_rate;
             let population = &self.population;
             let rng = &mut self.rng;
@@ -302,12 +329,19 @@ impl GeneticAlgorithm {
             };
 
             Self::mutate_with_rng(&mut child, self.mutation_rate, rng);
+            let child_cost = self.calculate_tour_cost(&child);
+            if child_cost < generation_best_cost {
+                generation_best_cost = child_cost;
+                generation_best_tour = child.clone();
+            }
             next_generation.push(child);
+            next_generation_costs.push(child_cost);
         }
 
         self.population = next_generation;
+        self.population_costs = next_generation_costs;
 
-        self.population[indexed_fitnesses[0].0].clone()
+        (generation_best_tour, generation_best_cost)
     }
 }
 
@@ -317,8 +351,7 @@ impl TspSolver for GeneticAlgorithm {
         let mut best_cost = f64::INFINITY;
 
         for _ in 0..self.max_generations {
-            let current_best = self.evolve();
-            let current_cost = self.calculate_tour_cost(&current_best);
+            let (current_best, current_cost) = self.evolve();
 
             if current_cost < best_cost {
                 best_cost = current_cost;
@@ -333,7 +366,14 @@ impl TspSolver for GeneticAlgorithm {
     }
 
     fn tour(&self) -> Vec<usize> {
-        self.population[0].clone()
+        self.population
+            .iter()
+            .zip(self.population_costs.iter())
+            .min_by(|(_, cost_a), (_, cost_b)| {
+                cost_a.partial_cmp(cost_b).unwrap_or(Ordering::Equal)
+            })
+            .map(|(tour, _)| tour.clone())
+            .unwrap_or_default()
     }
 
     fn cost(&self, from: usize, to: usize) -> f64 {
@@ -375,6 +415,10 @@ mod tests {
         assert_eq!(ga.mutation_rate, 0.01);
         assert_eq!(ga.max_generations, 100);
         assert_eq!(ga.population.len(), 50);
+        assert_eq!(ga.population_costs.len(), 50);
+        let (greedy_tour, greedy_cost) = ga.build_greedy_tour(0);
+        assert_eq!(ga.population[0], greedy_tour);
+        assert!((ga.population_costs[0] - greedy_cost).abs() < 1e-9);
     }
 
     #[test]
@@ -461,5 +505,37 @@ mod tests {
 
         assert_eq!(lhs.seed(), 7);
         assert_eq!(lhs.solve(), rhs.solve());
+    }
+
+    #[test]
+    fn evolve_returns_the_best_tour_in_the_new_population() {
+        let data = "
+        NAME : example
+        TYPE : TSP
+        DIMENSION : 5
+        EDGE_WEIGHT_TYPE: EUC_2D
+        NODE_COORD_SECTION
+          1 1.2 3.4
+          2 5.6 7.8
+          3 3.4 5.6
+          4 9.0 1.2
+          5 6.0 2.2
+        EOF
+        ";
+        let tsp = TspBuilder::parse_str(data).unwrap();
+        let mut ga = GeneticAlgorithm::with_options_and_seed(tsp, 20, 4, 0.7, 0.01, 10, 17);
+
+        let (best, best_cost) = ga.evolve();
+        let population_best = ga
+            .population_costs
+            .iter()
+            .copied()
+            .fold(f64::INFINITY, f64::min);
+
+        assert!(
+            (best_cost - population_best).abs() < 1e-9,
+            "evolve must return the best member of the updated population"
+        );
+        assert!(!best.is_empty());
     }
 }
