@@ -99,7 +99,7 @@ impl TwoOpt {
     /// * `tour` - The current tour.
     /// * `i` - The starting index of the segment to be reversed.
     /// * `k` - The ending index of the segment to be reversed.
-    fn swap_2opt(tour: &mut Vec<usize>, i: usize, k: usize) {
+    fn swap_2opt(tour: &mut [usize], i: usize, k: usize) {
         tour[i..=k].reverse();
     }
 
@@ -109,12 +109,15 @@ impl TwoOpt {
     ///
     /// The total tour cost.
     fn calculate_tour_cost(&self) -> f64 {
+        if self.tour.len() < 2 {
+            return 0.0;
+        }
         let mut cost = 0.0;
         let len = self.tour.len();
         for i in 0..len {
             let from = self.tour[i];
             let to = self.tour[(i + 1) % len];
-            cost += self.tsp.weight(from, to) as f64;
+            cost += self.tsp.weight(from, to);
         }
         cost
     }
@@ -135,11 +138,11 @@ impl TwoOpt {
             improved = false;
             for i in 0..n - 2 {
                 for j in i + 2..n {
-                    let current_distance = self.tsp.weight(self.tour[i], self.tour[i + 1]) as f64
-                        + self.tsp.weight(self.tour[j], self.tour[(j + 1) % n]) as f64;
+                    let current_distance = self.tsp.weight(self.tour[i], self.tour[i + 1])
+                        + self.tsp.weight(self.tour[j], self.tour[(j + 1) % n]);
 
-                    let new_distance = self.tsp.weight(self.tour[i], self.tour[j]) as f64
-                        + self.tsp.weight(self.tour[i + 1], self.tour[(j + 1) % n]) as f64;
+                    let new_distance = self.tsp.weight(self.tour[i], self.tour[j])
+                        + self.tsp.weight(self.tour[i + 1], self.tour[(j + 1) % n]);
 
                     if new_distance < current_distance {
                         Self::swap_2opt(&mut self.tour, i + 1, j);
@@ -190,7 +193,7 @@ impl TspSolver for TwoOpt {
     }
 
     fn format_name(&self) -> String {
-        format!("NN2Opt")
+        "NN2Opt".to_string()
     }
 }
 

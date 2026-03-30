@@ -254,3 +254,65 @@ fn test_metric_fn() {
         "Test xray2"
     );
 }
+
+#[test]
+fn test_read_str_truncated_node_coord_section() {
+    let s = "
+NAME: test
+TYPE: TSP
+DIMENSION: 3
+EDGE_WEIGHT_TYPE: GEO
+NODE_COORD_SECTION
+1 38.24 20.42
+2 39.57 26.15
+EOF
+";
+
+    let result = TspBuilder::parse_str(s);
+    assert!(result.is_err());
+    assert!(matches!(
+        result.unwrap_err(),
+        crate::ParseTspError::UnexpectedEof { .. }
+    ));
+}
+
+#[test]
+fn test_read_str_invalid_dimension_value() {
+    let s = "
+NAME: test
+TYPE: TSP
+DIMENSION: nope
+EDGE_WEIGHT_TYPE: GEO
+NODE_COORD_SECTION
+1 38.24 20.42
+2 39.57 26.15
+3 40.56 25.32
+EOF
+";
+
+    let result = TspBuilder::parse_str(s);
+    assert!(matches!(
+        result.unwrap_err(),
+        crate::ParseTspError::InvalidInput { key, .. } if key == "DIMENSION"
+    ));
+}
+
+#[test]
+fn test_read_str_unsupported_adj_list() {
+    let s = "
+NAME: test
+TYPE: HCP
+DIMENSION: 3
+EDGE_DATA_FORMAT: ADJ_LIST
+EDGE_DATA_SECTION
+1 2
+-1
+EOF
+";
+
+    let result = TspBuilder::parse_str(s);
+    assert!(matches!(
+        result.unwrap_err(),
+        crate::ParseTspError::UnsupportedFeature(feature) if feature == "ADJ_LIST"
+    ));
+}

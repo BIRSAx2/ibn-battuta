@@ -11,6 +11,10 @@ pub enum ParseTspError {
     InvalidEntry(String),
     /// An entry contains invalid inputs.
     InvalidInput { key: String, val: String },
+    /// Parsing stopped before a required section finished.
+    UnexpectedEof { section: String },
+    /// The input uses a feature that this parser does not support.
+    UnsupportedFeature(String),
     /// Any I/O or parsing errors that are not part of this list.
     Other(&'static str),
 }
@@ -24,13 +28,28 @@ impl From<std::io::Error> for ParseTspError {
 impl Display for ParseTspError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::IoError(e) => write!(f, "{}", format!("IO error: {}", e.to_string())),
-            Self::MissingEntry(e) => write!(f, "{}", format!("Missing entry: {}", e)),
-            Self::InvalidEntry(e) => write!(f, "{}", format!("Invalid entry: {}", e)),
+            Self::IoError(e) => write!(f, "IO error: {e}"),
+            Self::MissingEntry(e) => write!(f, "Missing entry: {e}"),
+            Self::InvalidEntry(e) => write!(f, "Invalid entry: {e}"),
             Self::InvalidInput { key, val } => {
-                write!(f, "{}", format!("Invalid input {} : {}", key, val))
+                write!(f, "Invalid input {key}: {val}")
             }
-            Self::Other(e) => write!(f, "{}", format!("Invalid entry: {}", e)),
+            Self::UnexpectedEof { section } => {
+                write!(f, "Unexpected end of input while parsing {section}")
+            }
+            Self::UnsupportedFeature(feature) => {
+                write!(f, "Unsupported TSPLIB feature: {feature}")
+            }
+            Self::Other(e) => write!(f, "Invalid entry: {e}"),
+        }
+    }
+}
+
+impl std::error::Error for ParseTspError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::IoError(error) => Some(error),
+            _ => None,
         }
     }
 }

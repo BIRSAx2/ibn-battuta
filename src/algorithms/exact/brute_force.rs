@@ -36,7 +36,7 @@ use crate::parser::Tsp;
 /// let solution = solver.solve();
 ///
 /// assert_eq!(solution.tour.len(), 4);
-/// assert!((solution.length - 4.0).abs() < std::f64::EPSILON);
+/// assert!((solution.length - 4.0).abs() < f64::EPSILON);
 /// ```
 pub struct BruteForce<'a> {
     tsp: &'a Tsp,
@@ -49,13 +49,10 @@ impl TspSolver for BruteForce<'_> {
     ///
     /// Returns the optimal solution, including the best tour and its cost.
     fn solve(&mut self) -> Solution {
-        let mut tour = vec![0];  // Start the tour from city 0
-        self.solve_recursive(&mut tour, 0.0);  // Recursively find the best tour
+        let mut tour = vec![0]; // Start the tour from city 0
+        self.solve_recursive(&mut tour, 0.0); // Recursively find the best tour
 
-        Solution::new(
-            self.best_tour.iter().map(|&i| i as usize).collect(),
-            self.best_cost,
-        )
+        Solution::new(self.best_tour.clone(), self.best_cost)
     }
 
     /// Returns the best tour found after solving.
@@ -78,7 +75,7 @@ impl<'a> BruteForce<'a> {
         BruteForce {
             tsp,
             best_tour: vec![],
-            best_cost: f64::INFINITY,  // Initialize with infinity cost
+            best_cost: f64::INFINITY, // Initialize with infinity cost
         }
     }
 
@@ -87,7 +84,7 @@ impl<'a> BruteForce<'a> {
     /// # Arguments
     /// * `tour` - The current partial tour being explored.
     /// * `cost` - The current cost of the partial tour.
-    fn solve_recursive(&mut self, tour: &mut Vec<usize>, cost: f64) {
+    fn solve_recursive(&mut self, tour: &mut [usize], cost: f64) {
         if tour.len() == self.tsp.dim() {
             // If we've visited all cities, complete the tour by returning to the starting city
             let last = tour.last().unwrap();
@@ -96,14 +93,14 @@ impl<'a> BruteForce<'a> {
             // Update the best tour and cost if this tour is better
             if cost < self.best_cost {
                 self.best_cost = cost;
-                self.best_tour = tour.clone();
+                self.best_tour = tour.to_vec();
             }
         } else {
             // Explore all cities that haven't been visited yet
             for i in 0..self.tsp.dim() {
                 if !tour.contains(&i) {
                     // Add the next city to the tour and calculate the new cost
-                    let mut new_tour = tour.clone();
+                    let mut new_tour = tour.to_vec();
                     new_tour.push(i);
                     let new_cost = cost + self.tsp.weight(*tour.last().unwrap(), i);
 
@@ -114,7 +111,6 @@ impl<'a> BruteForce<'a> {
         }
     }
 }
-
 
 #[cfg(test)]
 mod tests {

@@ -1,9 +1,9 @@
 use crate::algorithms::{Solution, TspSolver};
-use std::f64;
 use crate::Tsp;
+use std::f64;
 
-/// The `BellmanHeldKarp` struct implements the Held-Karp dynamic programming algorithm 
-/// for solving the Traveling Salesman Problem (TSP). It stores the TSP instance, optimal 
+/// The `BellmanHeldKarp` struct implements the Held-Karp dynamic programming algorithm
+/// for solving the Traveling Salesman Problem (TSP). It stores the TSP instance, optimal
 /// subproblem results, and the best tour and cost.
 ///
 /// # Fields
@@ -88,8 +88,8 @@ impl BellmanHeldKarp {
 
     /// Solves the TSP using the Bellman-Held-Karp dynamic programming algorithm.
     ///
-    /// This function computes the shortest possible tour that visits every city 
-    /// once and returns to the starting point. The result is stored in the 
+    /// This function computes the shortest possible tour that visits every city
+    /// once and returns to the starting point. The result is stored in the
     /// `best_tour` and `best_cost` fields.
     ///
     /// # Example
@@ -221,7 +221,7 @@ impl TspSolver for BellmanHeldKarp {
             return Solution::new(vec![0], 0.0);
         }
         self.bellman_held_karp();
-        Solution::new(self.best_tour.iter().map(|&i| i).collect(), self.best_cost)
+        Solution::new(self.best_tour.to_vec(), self.best_cost)
     }
 
     /// Returns the best tour found by the solver.
@@ -235,12 +235,11 @@ impl TspSolver for BellmanHeldKarp {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use crate::BellmanHeldKarp;
-    use crate::TspSolver;
     use crate::TspBuilder;
+    use crate::TspSolver;
 
     #[test]
     fn solves_simple_tsp() {

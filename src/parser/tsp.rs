@@ -42,33 +42,33 @@ static K_TOUR_SEC: &str = "TOUR_SECTION";
 /// - ```COMMENT``` (optional): comments of a dataset.
 /// - ```DIM``` (required): the dimension of a dataset.
 /// - ```CAPACITY``` (required if ```TYPE``` is [`TspKind::Cvrp`]): the truck capacity in Capacitated
-/// Vehicle Routing Problem (CVRP).
+///   Vehicle Routing Problem (CVRP).
 /// - ```EDGE_WEIGHT_TYPE``` (required): indicates how the edge weights (or distances) are calculated.
-/// Represented by the enum [`WeightKind`].
+///   Represented by the enum [`WeightKind`].
 /// - ```EDGE_WEIGHT_FORMAT``` (required if ```EDGE_WEIGHT_TYPE``` is [`WeightKind::Explicit`]):
-/// specifies how the edge weights are given in the file. Represented by the enum [`WeightFormat`].
+///   specifies how the edge weights are given in the file. Represented by the enum [`WeightFormat`].
 /// - ```EDGE_DATA_FORMAT``` (optional): specifies how the edges of a graph are given in the file,
-/// if the graph is not complete. Represented by the enum [`EdgeFormat`].
+///   if the graph is not complete. Represented by the enum [`EdgeFormat`].
 /// - ```NODE_COORD_TYPE``` (required if ```EDGE_WEIGHT_TYPE``` is not [`WeightKind::Explicit`]):
-/// specifies how the coordinate for each node is given in the file. Represented by the enum [`CoordKind`].
+///   specifies how the coordinate for each node is given in the file. Represented by the enum [`CoordKind`].
 /// - ```DISPLAY_DATA_TYPE``` (optional): spcifies how the coordinate for each node for display
-/// purpose is given in the file. Represented by the enum [`DisplayKind`].
+///   purpose is given in the file. Represented by the enum [`DisplayKind`].
 ///
 /// The *data part* has the following entries:
 /// - ```NODE_COORD_SECTION``` (required if ```NODE_COORD_TYPE``` is not [`CoordKind::NoCoord`]):
-/// a list of node coordinates.
+///   a list of node coordinates.
 /// - ```DEPOT_SECTION``` (relevant for [`TspKind::Cvrp`]): a list of possible alternate nodes.
 /// - ```DEMAND_SECTION``` (relevant for [`TspKind::Cvrp`]): a list of demands for all nodes. Each
-/// entry is a tuple ```(usize, usize)```, in which the first number is a node's id and the second
-/// number represents the demand for that node. All depot nodes must be also included in this section
-/// and their demands are always ```0```.
+///   entry is a tuple ```(usize, usize)```, in which the first number is a node's id and the second
+///   number represents the demand for that node. All depot nodes must be also included in this section
+///   and their demands are always ```0```.
 /// - ```EDGE_DATA_SECTION```: a list of edges.
 /// - ```FIXED_EDGES_SECTION``` (optional): a list of edges that must be included in solutions to the problem.
 /// - ```DISPLAY_DATA_SECTION``` (required if ```DISPLAY_DATA_TYPE``` is [`DisplayKind::Disp2d`]):
-/// a list of 2D node coordinates for display purpose.
+///   a list of 2D node coordinates for display purpose.
 /// - ```TOUR_SECTION```: a collection of tours. Each tour is a sequence of node ids.
 /// - ```EDGE_WEIGHT_SECTION```(optional if ```EDGE_WEIGHT_FORMAT``` is [`WeightFormat::Function`]):
-///  node coordinates in a matrix form as dictated in ```EDGE_WEIGHT_FORMAT```.
+///   node coordinates in a matrix form as dictated in ```EDGE_WEIGHT_FORMAT```.
 ///
 /// # Example
 ///
@@ -97,11 +97,11 @@ static K_TOUR_SEC: &str = "TOUR_SECTION";
 ///
 /// We can also parse a file by calling the function [`TspBuilder::parse_path`]:
 ///
-/// ```
+/// ```no_run
 /// use ibn_battuta::parser::TspBuilder;
 /// use std::path::Path;
 ///
-/// let path = Path::new("./tests/data/berlin52.tsp");
+/// let path = Path::new("./data/tsplib/berlin52.tsp");
 /// let result = TspBuilder::parse_path(path);
 /// assert!(result.is_ok());
 /// ```
@@ -195,50 +195,82 @@ pub struct Tsp {
 }
 
 impl Tsp {
+    /// Returns the node data for a zero-based node id.
+    pub fn node(&self, id: usize) -> Option<&Point> {
+        self.node_coords.get(&id)
+    }
+
+    /// Returns the edge weight between two nodes if both nodes can be resolved.
+    pub fn try_weight(&self, a: usize, b: usize) -> Option<f64> {
+        match self.weight_kind {
+            WeightKind::Explicit => match self.weight_format {
+                WeightFormat::Function | WeightFormat::Undefined => None,
+                WeightFormat::FullMatrix => {
+                    self.edge_weights.get(a).and_then(|row| row.get(b)).copied()
+                }
+                WeightFormat::UpperRow | WeightFormat::LowerCol => match a.cmp(&b) {
+                    std::cmp::Ordering::Less => self
+                        .edge_weights
+                        .get(a)
+                        .and_then(|row| row.get(b.checked_sub(a + 1)?))
+                        .copied(),
+                    std::cmp::Ordering::Equal => Some(0.0),
+                    std::cmp::Ordering::Greater => self
+                        .edge_weights
+                        .get(b)
+                        .and_then(|row| row.get(a.checked_sub(b + 1)?))
+                        .copied(),
+                },
+                WeightFormat::UpperDiagRow | WeightFormat::LowerDiagCol => {
+                    if a < b {
+                        self.edge_weights
+                            .get(a)
+                            .and_then(|row| row.get(b - a))
+                            .copied()
+                    } else {
+                        self.edge_weights
+                            .get(b)
+                            .and_then(|row| row.get(a - b))
+                            .copied()
+                    }
+                }
+                WeightFormat::LowerRow | WeightFormat::UpperCol => match a.cmp(&b) {
+                    std::cmp::Ordering::Less => self
+                        .edge_weights
+                        .get(b.checked_sub(1)?)
+                        .and_then(|row| row.get(a))
+                        .copied(),
+                    std::cmp::Ordering::Equal => Some(0.0),
+                    std::cmp::Ordering::Greater => self
+                        .edge_weights
+                        .get(a.checked_sub(1)?)
+                        .and_then(|row| row.get(b))
+                        .copied(),
+                },
+                WeightFormat::LowerDiagRow | WeightFormat::UpperDiagCol => {
+                    if a < b {
+                        self.edge_weights.get(b).and_then(|row| row.get(a)).copied()
+                    } else {
+                        self.edge_weights.get(a).and_then(|row| row.get(b)).copied()
+                    }
+                }
+            },
+            _ => {
+                let na = self.node(a)?;
+                let nb = self.node(b)?;
+                Some(self.weight_kind.cost(na.pos(), nb.pos()))
+            }
+        }
+    }
+
     /// Returns the edge weight between two nodes.
     ///
     /// # Arguments
     /// * a - index of the first node.
     /// * b - index of the second node.
     pub fn weight(&self, a: usize, b: usize) -> f64 {
-        match self.weight_kind {
-            WeightKind::Explicit => match self.weight_format {
-                WeightFormat::Function => 0.,
-                WeightFormat::FullMatrix => self.edge_weights[a][b],
-                WeightFormat::UpperRow | WeightFormat::LowerCol => match a.cmp(&b) {
-                    std::cmp::Ordering::Less => self.edge_weights[a][b - a - 1],
-                    std::cmp::Ordering::Equal => 0.,
-                    std::cmp::Ordering::Greater => self.edge_weights[b][a - b - 1],
-                },
-                WeightFormat::UpperDiagRow | WeightFormat::LowerDiagCol => {
-                    if a < b {
-                        self.edge_weights[a][b - a]
-                    } else {
-                        self.edge_weights[b][a - b]
-                    }
-                }
-                WeightFormat::LowerRow | WeightFormat::UpperCol => match a.cmp(&b) {
-                    std::cmp::Ordering::Less => self.edge_weights[b - 1][a],
-                    std::cmp::Ordering::Equal => 0.,
-                    std::cmp::Ordering::Greater => self.edge_weights[a - 1][b],
-                },
-                WeightFormat::LowerDiagRow | WeightFormat::UpperDiagCol => {
-                    if a < b {
-                        self.edge_weights[b][a]
-                    } else {
-                        self.edge_weights[a][b]
-                    }
-                }
-                WeightFormat::Undefined => 0.,
-            },
-            _ => {
-                if let (Some(na), Some(nb)) = (self.node_coords.get(&a), self.node_coords.get(&b)) {
-                    self.weight_kind.cost(na.pos(), nb.pos())
-                } else {
-                    panic!("Node not found: a={}, b={}", a, b);
-                }
-            }
-        }
+        self.try_weight(a, b)
+            .unwrap_or_else(|| panic!("Node or edge not found: a={a}, b={b}"))
     }
 }
 
@@ -290,9 +322,7 @@ pub struct TspBuilder {
 
 impl TspBuilder {
     pub fn new() -> Self {
-        TspBuilder {
-            ..Default::default()
-        }
+        Self::default()
     }
 
     /// Parses an input string.
@@ -305,8 +335,12 @@ impl TspBuilder {
     where
         S: AsRef<str>,
     {
-        let mut itr = s.as_ref().lines();
-        Self::parse_it(&mut itr)
+        let lines = s
+            .as_ref()
+            .lines()
+            .map(std::borrow::ToOwned::to_owned)
+            .collect::<Vec<_>>();
+        Self::parse_lines(&lines)
     }
 
     /// Parses the content of a file given from a path.
@@ -325,25 +359,17 @@ impl TspBuilder {
 
         let file = File::open(path)?;
         let reader = BufReader::new(file);
-        let mut lines_it = reader.lines().map(|l| l.unwrap());
-        Self::parse_it(&mut lines_it)
+        let lines = reader.lines().collect::<Result<Vec<_>, _>>()?;
+        Self::parse_lines(&lines)
     }
 
-    /// Parses each line iterator.
-    fn parse_it<I>(itr: &mut I) -> Result<Tsp, ParseTspError>
-    where
-        I: Iterator,
-        <I as Iterator>::Item: AsRef<str>,
-    {
-        let splitter = |s: &str| {
-            let val = s.split(':').collect::<Vec<&str>>();
-            String::from(val[1].trim())
-        };
-
+    fn parse_lines(lines: &[String]) -> Result<Tsp, ParseTspError> {
         let mut builder = TspBuilder::new();
+        let mut index = 0;
 
-        while let Some(line) = itr.next() {
-            let line = line.as_ref().trim();
+        while let Some(raw_line) = lines.get(index) {
+            index += 1;
+            let line = raw_line.trim();
             if line.is_empty() {
                 continue;
             }
@@ -352,51 +378,64 @@ impl TspBuilder {
             }
 
             if line.starts_with(K_NAME) {
-                builder.name = Some(splitter(&line));
+                builder.name = Some(Self::split_entry(line, K_NAME)?.to_owned());
             } else if line.starts_with(K_TYPE) {
-                builder.kind = Some(TspKind::try_from(InputWrapper(splitter(&line).as_str()))?);
+                builder.kind = Some(TspKind::try_from(InputWrapper(Self::split_entry(
+                    line, K_TYPE,
+                )?))?);
             } else if line.starts_with("COMMENT") {
-                // TODO: multiple-line comments?
-                builder.comment = Some(splitter(&line));
+                let comment = Self::split_entry(line, "COMMENT")?;
+                match builder.comment.as_mut() {
+                    Some(existing) => {
+                        existing.push('\n');
+                        existing.push_str(comment);
+                    }
+                    None => builder.comment = Some(comment.to_owned()),
+                }
             } else if line.starts_with(K_DIM) {
-                builder.dim = Some(splitter(&line).parse::<usize>().unwrap());
+                builder.dim = Some(Self::parse_usize(Self::split_entry(line, K_DIM)?, K_DIM)?);
             } else if line.starts_with("CAPACITY") {
-                builder.capacity = Some(splitter(&line).parse::<f64>().unwrap());
+                builder.capacity = Some(Self::parse_f64(Self::split_entry(line, K_CAP)?, K_CAP)?);
             } else if line.starts_with(K_WEIGHT_TYPE) {
-                let kind = WeightKind::try_from(InputWrapper(splitter(&line).as_str()))?;
+                let kind =
+                    WeightKind::try_from(InputWrapper(Self::split_entry(line, K_WEIGHT_TYPE)?))?;
                 builder.weight_kind = Some(kind);
                 builder.coord_kind = Some(CoordKind::from(kind));
             } else if line.starts_with(K_WEIGHT_FORMAT) {
                 builder.weight_format = Some(WeightFormat::try_from(InputWrapper(
-                    splitter(&line).as_str(),
+                    Self::split_entry(line, K_WEIGHT_FORMAT)?,
                 ))?);
             } else if line.starts_with(K_EDGE_FORMAT) {
-                builder.edge_format = Some(EdgeFormat::try_from(InputWrapper(
-                    splitter(&line).as_str(),
-                ))?);
+                builder.edge_format = Some(EdgeFormat::try_from(InputWrapper(Self::split_entry(
+                    line,
+                    K_EDGE_FORMAT,
+                )?))?);
             } else if line.starts_with(K_NODE_COORD_TYPE) {
-                builder.coord_kind =
-                    Some(CoordKind::try_from(InputWrapper(splitter(&line).as_str()))?);
+                builder.coord_kind = Some(CoordKind::try_from(InputWrapper(Self::split_entry(
+                    line,
+                    K_NODE_COORD_TYPE,
+                )?))?);
             } else if line.starts_with(K_DISP_TYPE) {
-                builder.disp_kind = Some(DisplayKind::try_from(InputWrapper(
-                    splitter(&line).as_str(),
-                ))?);
+                builder.disp_kind = Some(DisplayKind::try_from(InputWrapper(Self::split_entry(
+                    line,
+                    K_DISP_TYPE,
+                )?))?);
             } else if line.starts_with(K_NODE_COORD_SEC) {
-                builder.parse_node_coord_section(itr)?;
+                builder.parse_node_coord_section(lines, &mut index)?;
             } else if line.starts_with("DEPOT_SECTION") {
-                builder.parse_depot_section(itr)?;
+                builder.parse_depot_section(lines, &mut index)?;
             } else if line.starts_with("DEMAND_SECTION") {
-                builder.parse_demand_section(itr)?;
+                builder.parse_demand_section(lines, &mut index)?;
             } else if line.starts_with("EDGE_DATA_SECTION") {
-                builder.parse_edge_data_section(itr)?;
+                builder.parse_edge_data_section(lines, &mut index)?;
             } else if line.starts_with("FIXED_EDGES_SECTION") {
-                builder.parse_fixed_edges_section(itr)?;
+                builder.parse_fixed_edges_section(lines, &mut index)?;
             } else if line.starts_with("DISPLAY_DATA_SECTION") {
-                builder.parse_display_data_section(itr)?;
+                builder.parse_display_data_section(lines, &mut index)?;
             } else if line.starts_with(K_TOUR_SEC) {
-                builder.parse_tour_section(itr)?;
+                builder.parse_tour_section(lines, &mut index)?;
             } else if line.starts_with(K_EDGE_WEIGHT_SEC) {
-                builder.parse_edge_weight_section(itr)?;
+                builder.parse_edge_weight_section(lines, &mut index)?;
             } else {
                 return Err(ParseTspError::InvalidEntry(String::from(line)));
             }
@@ -406,54 +445,131 @@ impl TspBuilder {
     }
 
     /// Parse the block `NODE_COORD_SECTION`.
-    fn parse_node_coord_section<I>(&mut self, lines_it: &mut I) -> Result<(), ParseTspError>
-    where
-        I: Iterator,
-        <I as Iterator>::Item: AsRef<str>,
-    {
-        self.validate_spec()?;
+    fn split_entry<'a>(line: &'a str, key: &str) -> Result<&'a str, ParseTspError> {
+        let (_, value) = line
+            .split_once(':')
+            .ok_or_else(|| ParseTspError::InvalidEntry(line.to_string()))?;
+        let value = value.trim();
+        if value.is_empty() {
+            return Err(ParseTspError::InvalidInput {
+                key: key.to_string(),
+                val: String::new(),
+            });
+        }
+        Ok(value)
+    }
 
-        let func: Box<dyn Fn(&Vec<&str>) -> Point> = match &self.coord_kind.unwrap() {
+    fn next_section_line<'a>(
+        lines: &'a [String],
+        index: &mut usize,
+        section: &str,
+    ) -> Result<&'a str, ParseTspError> {
+        while let Some(line) = lines.get(*index) {
+            *index += 1;
+            let trimmed = line.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+            if trimmed.starts_with("EOF") {
+                return Err(ParseTspError::UnexpectedEof {
+                    section: section.to_string(),
+                });
+            }
+            return Ok(trimmed);
+        }
+
+        Err(ParseTspError::UnexpectedEof {
+            section: section.to_string(),
+        })
+    }
+
+    fn parse_usize(value: &str, key: &str) -> Result<usize, ParseTspError> {
+        value
+            .parse::<usize>()
+            .map_err(|_| ParseTspError::InvalidInput {
+                key: key.to_string(),
+                val: value.to_string(),
+            })
+    }
+
+    fn parse_f64(value: &str, key: &str) -> Result<f64, ParseTspError> {
+        value
+            .parse::<f64>()
+            .map_err(|_| ParseTspError::InvalidInput {
+                key: key.to_string(),
+                val: value.to_string(),
+            })
+    }
+
+    fn parse_node_coord_tokens(
+        tokens: &[&str],
+        coord_kind: CoordKind,
+    ) -> Result<Point, ParseTspError> {
+        match coord_kind {
             CoordKind::Coord2d => {
-                let f = |v: &Vec<&str>| {
-                    Point::new2(
-                        v[0].parse::<usize>().unwrap(),
-                        v[1].parse::<f64>().unwrap(),
-                        v[2].parse::<f64>().unwrap(),
-                    )
-                };
-                Box::new(f)
+                if tokens.len() != 3 {
+                    return Err(ParseTspError::InvalidInput {
+                        key: K_NODE_COORD_SEC.to_string(),
+                        val: tokens.join(" "),
+                    });
+                }
+                Ok(Point::new2(
+                    Self::parse_usize(tokens[0], K_NODE_COORD_SEC)?,
+                    Self::parse_f64(tokens[1], K_NODE_COORD_SEC)?,
+                    Self::parse_f64(tokens[2], K_NODE_COORD_SEC)?,
+                ))
             }
             CoordKind::Coord3d => {
-                let f = |v: &Vec<&str>| {
-                    Point::new3(
-                        v[0].parse::<usize>().unwrap(),
-                        v[1].parse::<f64>().unwrap(),
-                        v[2].parse::<f64>().unwrap(),
-                        v[3].parse::<f64>().unwrap(),
-                    )
-                };
-                Box::new(f)
+                if tokens.len() != 4 {
+                    return Err(ParseTspError::InvalidInput {
+                        key: K_NODE_COORD_SEC.to_string(),
+                        val: tokens.join(" "),
+                    });
+                }
+                Ok(Point::new3(
+                    Self::parse_usize(tokens[0], K_NODE_COORD_SEC)?,
+                    Self::parse_f64(tokens[1], K_NODE_COORD_SEC)?,
+                    Self::parse_f64(tokens[2], K_NODE_COORD_SEC)?,
+                    Self::parse_f64(tokens[3], K_NODE_COORD_SEC)?,
+                ))
             }
-            CoordKind::NoCoord | CoordKind::Undefined => {
-                unimplemented!()
-            }
-        };
+            CoordKind::NoCoord | CoordKind::Undefined => Err(ParseTspError::UnsupportedFeature(
+                K_NODE_COORD_SEC.to_string(),
+            )),
+        }
+    }
+
+    fn parse_edge_pair(line: &str, key: &str) -> Result<(usize, usize), ParseTspError> {
+        let tokens = line.split_whitespace().collect::<Vec<_>>();
+        if tokens.len() != 2 {
+            return Err(ParseTspError::InvalidInput {
+                key: key.to_string(),
+                val: line.to_string(),
+            });
+        }
+        Ok((
+            Self::parse_usize(tokens[0], key)?,
+            Self::parse_usize(tokens[1], key)?,
+        ))
+    }
+
+    /// Parse the block `NODE_COORD_SECTION`.
+    fn parse_node_coord_section(
+        &mut self,
+        lines: &[String],
+        index: &mut usize,
+    ) -> Result<(), ParseTspError> {
+        self.validate_spec()?;
+        let coord_kind = self.coord_kind.unwrap_or(CoordKind::Undefined);
 
         let mut count = 0;
-        let dim = self.dim.unwrap();
+        let dim = self.dim.unwrap_or(0);
         let mut dta = HashMap::with_capacity(dim);
 
         while count < dim {
-            // TODO: replace unwrap()
-            let line = lines_it.next().unwrap();
-            let pt = func(
-                &line
-                    .as_ref()
-                    .trim()
-                    .split_whitespace()
-                    .collect::<Vec<&str>>(),
-            );
+            let line = Self::next_section_line(lines, index, K_NODE_COORD_SEC)?;
+            let tokens = line.split_whitespace().collect::<Vec<_>>();
+            let pt = Self::parse_node_coord_tokens(&tokens, coord_kind)?;
             dta.insert(pt.id, pt);
             count += 1;
         }
@@ -464,22 +580,22 @@ impl TspBuilder {
     }
 
     /// Parse the block `DEPOT_SECTION`.
-    fn parse_depot_section<I>(&mut self, lines_it: &mut I) -> Result<(), ParseTspError>
-    where
-        I: Iterator,
-        <I as Iterator>::Item: AsRef<str>,
-    {
+    fn parse_depot_section(
+        &mut self,
+        lines: &[String],
+        index: &mut usize,
+    ) -> Result<(), ParseTspError> {
         self.validate_spec()?;
 
         let mut dta = HashSet::new();
 
         loop {
-            let line = lines_it.next().unwrap();
-            if line.as_ref().trim().starts_with("-1") {
+            let line = Self::next_section_line(lines, index, "DEPOT_SECTION")?;
+            if line.starts_with("-1") {
                 break;
             }
 
-            dta.insert(line.as_ref().trim().parse::<usize>().unwrap());
+            dta.insert(Self::parse_usize(line, "DEPOT_SECTION")?);
         }
 
         self.depots = Some(dta);
@@ -488,21 +604,28 @@ impl TspBuilder {
     }
 
     /// Parse the block `DEMAND_SECTION`.
-    fn parse_demand_section<I>(&mut self, lines_it: &mut I) -> Result<(), ParseTspError>
-    where
-        I: Iterator,
-        <I as Iterator>::Item: AsRef<str>,
-    {
+    fn parse_demand_section(
+        &mut self,
+        lines: &[String],
+        index: &mut usize,
+    ) -> Result<(), ParseTspError> {
         self.validate_spec()?;
 
         let mut dta = HashMap::new();
 
-        for _ in 0..self.dim.unwrap() {
-            let line = lines_it.next().unwrap();
-            let mut it = line.as_ref().trim().split_whitespace();
-            if let (Some(id), Some(de)) = (it.next(), it.next()) {
-                dta.insert(id.parse::<usize>().unwrap(), de.parse::<f64>().unwrap());
+        for _ in 0..self.dim.unwrap_or(0) {
+            let line = Self::next_section_line(lines, index, "DEMAND_SECTION")?;
+            let tokens = line.split_whitespace().collect::<Vec<_>>();
+            if tokens.len() != 2 {
+                return Err(ParseTspError::InvalidInput {
+                    key: "DEMAND_SECTION".to_string(),
+                    val: line.to_string(),
+                });
             }
+            dta.insert(
+                Self::parse_usize(tokens[0], "DEMAND_SECTION")?,
+                Self::parse_f64(tokens[1], "DEMAND_SECTION")?,
+            );
         }
 
         self.demands = Some(dta);
@@ -511,30 +634,33 @@ impl TspBuilder {
     }
 
     /// Parses the ```EDGE_DATA_SECTION```.
-    fn parse_edge_data_section<I>(&mut self, lines_it: &mut I) -> Result<(), ParseTspError>
-    where
-        I: Iterator,
-        <I as Iterator>::Item: AsRef<str>,
-    {
+    fn parse_edge_data_section(
+        &mut self,
+        lines: &[String],
+        index: &mut usize,
+    ) -> Result<(), ParseTspError> {
         let mut dta = Vec::new();
 
-        match self.edge_format.as_mut().unwrap() {
+        match self
+            .edge_format
+            .as_mut()
+            .ok_or_else(|| ParseTspError::MissingEntry(String::from(K_EDGE_FORMAT)))?
+        {
             EdgeFormat::EdgeList(v) => {
                 loop {
-                    let line = lines_it.next().unwrap();
-                    if line.as_ref().trim().starts_with("-1") {
+                    let line = Self::next_section_line(lines, index, "EDGE_DATA_SECTION")?;
+                    if line.starts_with("-1") {
                         break;
                     }
 
-                    let mut it = line.as_ref().trim().split_whitespace();
-                    if let (Some(f), Some(l)) = (it.next(), it.next()) {
-                        dta.push((f.parse::<usize>().unwrap(), l.parse::<usize>().unwrap()));
-                    }
+                    dta.push(Self::parse_edge_pair(line, "EDGE_DATA_SECTION")?);
                 }
 
                 v.append(&mut dta);
             }
-            EdgeFormat::AdjList => todo!(),
+            EdgeFormat::AdjList => {
+                return Err(ParseTspError::UnsupportedFeature("ADJ_LIST".to_string()))
+            }
             EdgeFormat::Undefined => {
                 return Err(ParseTspError::InvalidEntry(String::from(K_EDGE_FORMAT)))
             }
@@ -543,23 +669,20 @@ impl TspBuilder {
         Ok(())
     }
 
-    fn parse_fixed_edges_section<I>(&mut self, lines_it: &mut I) -> Result<(), ParseTspError>
-    where
-        I: Iterator,
-        <I as Iterator>::Item: AsRef<str>,
-    {
+    fn parse_fixed_edges_section(
+        &mut self,
+        lines: &[String],
+        index: &mut usize,
+    ) -> Result<(), ParseTspError> {
         let mut dta = Vec::new();
 
         loop {
-            let line = lines_it.next().unwrap();
-            if line.as_ref().trim().starts_with("-1") {
+            let line = Self::next_section_line(lines, index, "FIXED_EDGES_SECTION")?;
+            if line.starts_with("-1") {
                 break;
             }
 
-            let mut it = line.as_ref().trim().split_whitespace();
-            if let (Some(f), Some(l)) = (it.next(), it.next()) {
-                dta.push((f.parse::<usize>().unwrap(), l.parse::<usize>().unwrap()));
-            }
+            dta.push(Self::parse_edge_pair(line, "FIXED_EDGES_SECTION")?);
         }
 
         self.fixed_edges = Some(dta);
@@ -568,54 +691,39 @@ impl TspBuilder {
     }
 
     /// Parses ```TOUR_SECTION```.
-    fn parse_tour_section<I>(&mut self, lines_it: &mut I) -> Result<(), ParseTspError>
-    where
-        I: Iterator,
-        <I as Iterator>::Item: AsRef<str>,
-    {
+    fn parse_tour_section(
+        &mut self,
+        lines: &[String],
+        index: &mut usize,
+    ) -> Result<(), ParseTspError> {
         self.validate_spec()?;
         let mut dta = Vec::new();
-        let mut v = Vec::new();
+        let mut current = Vec::new();
 
-        // Naive implementation.
-        loop {
-            let line = lines_it.next().unwrap();
-            let s = line.as_ref().trim();
-
-            if s.starts_with("-1") {
-                let tmp = v.drain(0..).collect();
-                dta.push(tmp);
-
-                match lines_it.peekable().peek() {
-                    Some(peek) => {
-                        let s = peek.as_ref().trim();
-                        if s.starts_with("-1") {
-                            break;
-                        }
-                        let ch = s.chars().next().unwrap();
-                        if ch.is_digit(10) {
-                            v = Vec::new();
-                            v.append(
-                                &mut s
-                                    .split_whitespace()
-                                    .map(|s| s.parse::<usize>().unwrap())
-                                    .collect(),
-                            );
-                        } else {
-                            break;
-                        }
-                    }
-                    None => break,
-                };
+        while let Some(line) = lines.get(*index) {
+            *index += 1;
+            let line = line.trim();
+            if line.is_empty() {
+                continue;
+            }
+            if line.starts_with("EOF") {
+                break;
+            }
+            if line.starts_with("-1") {
+                if current.is_empty() {
+                    break;
+                }
+                dta.push(std::mem::take(&mut current));
                 continue;
             }
 
-            v.append(
-                &mut s
-                    .split_whitespace()
-                    .map(|s| s.parse::<usize>().unwrap())
-                    .collect(),
-            );
+            for token in line.split_whitespace() {
+                current.push(Self::parse_usize(token, K_TOUR_SEC)?);
+            }
+        }
+
+        if !current.is_empty() {
+            dta.push(current);
         }
 
         self.tours = Some(dta);
@@ -624,47 +732,50 @@ impl TspBuilder {
     }
 
     /// Parses ```EDGE_WEIGHT_SECTION```.
-    fn parse_edge_weight_section<I>(&mut self, lines_it: &mut I) -> Result<(), ParseTspError>
-    where
-        I: Iterator,
-        <I as Iterator>::Item: AsRef<str>,
-    {
+    fn parse_edge_weight_section(
+        &mut self,
+        lines: &[String],
+        index: &mut usize,
+    ) -> Result<(), ParseTspError> {
         self.validate_spec()?;
-        let dim = self.dim.unwrap();
+        let dim = self.dim.unwrap_or(0);
 
-        // TODO: check memory consumption for large files.
-        let (len_vec, cnt, it): (usize, usize, Box<dyn Iterator<Item=usize>>) =
-            match self.weight_format.unwrap() {
-                WeightFormat::Function => (0, 0, Box::new(std::iter::empty::<usize>())),
-                WeightFormat::FullMatrix => {
-                    (dim, dim * dim, Box::new(std::iter::repeat(dim).take(dim)))
-                }
-                WeightFormat::UpperRow | WeightFormat::LowerCol => {
-                    (dim - 1, dim * (dim - 1) / 2, Box::new((1..dim).rev()))
-                }
-                WeightFormat::LowerRow | WeightFormat::UpperCol => {
-                    (dim - 1, dim * (dim - 1) / 2, Box::new(1..dim))
-                }
-                WeightFormat::UpperDiagRow | WeightFormat::LowerDiagCol => {
-                    (dim, dim * (dim + 1) / 2, Box::new((1..=dim).rev()))
-                }
-                WeightFormat::LowerDiagRow | WeightFormat::UpperDiagCol => {
-                    (dim, dim * (dim + 1) / 2, Box::new(1..=dim))
-                }
-                WeightFormat::Undefined => (0, 0, Box::new(std::iter::empty::<usize>())),
-            };
+        let (len_vec, cnt, row_lengths): (usize, usize, Vec<usize>) = match self
+            .weight_format
+            .unwrap_or(WeightFormat::Undefined)
+        {
+            WeightFormat::Function => (0, 0, Vec::new()),
+            WeightFormat::FullMatrix => (dim, dim * dim, std::iter::repeat_n(dim, dim).collect()),
+            WeightFormat::UpperRow | WeightFormat::LowerCol => (
+                dim.saturating_sub(1),
+                dim * dim.saturating_sub(1) / 2,
+                (1..dim).rev().collect(),
+            ),
+            WeightFormat::LowerRow | WeightFormat::UpperCol => (
+                dim.saturating_sub(1),
+                dim * dim.saturating_sub(1) / 2,
+                (1..dim).collect(),
+            ),
+            WeightFormat::UpperDiagRow | WeightFormat::LowerDiagCol => {
+                (dim, dim * (dim + 1) / 2, (1..=dim).rev().collect())
+            }
+            WeightFormat::LowerDiagRow | WeightFormat::UpperDiagCol => {
+                (dim, dim * (dim + 1) / 2, (1..=dim).collect())
+            }
+            WeightFormat::Undefined => {
+                return Err(ParseTspError::InvalidEntry(String::from(K_WEIGHT_FORMAT)))
+            }
+        };
 
         let mut dta = Vec::with_capacity(len_vec);
         let mut v = Vec::with_capacity(cnt);
 
         while v.len() < cnt {
-            let line = lines_it.next().unwrap();
-            let mut tmp: Vec<f64> = line
-                .as_ref()
-                .trim()
+            let line = Self::next_section_line(lines, index, K_EDGE_WEIGHT_SEC)?;
+            let mut tmp = line
                 .split_whitespace()
-                .map(|s| s.parse::<f64>().unwrap())
-                .collect();
+                .map(|s| Self::parse_f64(s, K_EDGE_WEIGHT_SEC))
+                .collect::<Result<Vec<_>, _>>()?;
 
             v.append(&mut tmp);
         }
@@ -675,7 +786,14 @@ impl TspBuilder {
             v.remove(0);
         }
 
-        for len_row in it {
+        if v.len() > cnt && v.len() != dim + 1 {
+            return Err(ParseTspError::InvalidInput {
+                key: K_EDGE_WEIGHT_SEC.to_string(),
+                val: format!("expected {cnt} weights, found {}", v.len()),
+            });
+        }
+
+        for len_row in row_lengths {
             dta.push(v.drain(0..len_row).collect());
         }
 
@@ -684,27 +802,29 @@ impl TspBuilder {
         Ok(())
     }
 
-    fn parse_display_data_section<I>(&mut self, lines_it: &mut I) -> Result<(), ParseTspError>
-    where
-        I: Iterator,
-        <I as Iterator>::Item: AsRef<str>,
-    {
+    fn parse_display_data_section(
+        &mut self,
+        lines: &[String],
+        index: &mut usize,
+    ) -> Result<(), ParseTspError> {
         self.validate_spec()?;
-        let dim = self.dim.unwrap();
+        let dim = self.dim.unwrap_or(0);
         let mut dta = Vec::with_capacity(dim);
 
         let mut count = 0;
         while count < dim {
-            let line = lines_it.next().unwrap();
-            let v = line
-                .as_ref()
-                .trim()
-                .split_whitespace()
-                .collect::<Vec<&str>>();
+            let line = Self::next_section_line(lines, index, "DISPLAY_DATA_SECTION")?;
+            let v = line.split_whitespace().collect::<Vec<_>>();
+            if v.len() != 3 {
+                return Err(ParseTspError::InvalidInput {
+                    key: "DISPLAY_DATA_SECTION".to_string(),
+                    val: line.to_string(),
+                });
+            }
             dta.push(Point::new2(
-                v[0].parse::<usize>().unwrap(),
-                v[1].parse::<f64>().unwrap(),
-                v[2].parse::<f64>().unwrap(),
+                Self::parse_usize(v[0], "DISPLAY_DATA_SECTION")?,
+                Self::parse_f64(v[1], "DISPLAY_DATA_SECTION")?,
+                Self::parse_f64(v[2], "DISPLAY_DATA_SECTION")?,
             ));
 
             count += 1;
@@ -774,7 +894,11 @@ impl TspBuilder {
 
     /// Validates the data part.
     fn validate_data(&self) -> Result<(), ParseTspError> {
-        match self.kind.unwrap() {
+        let kind = self
+            .kind
+            .ok_or_else(|| ParseTspError::MissingEntry(String::from(K_TYPE)))?;
+
+        match kind {
             TspKind::Tsp | TspKind::Atsp | TspKind::Cvrp => match self.weight_kind.unwrap() {
                 WeightKind::Explicit => {
                     if self.edge_weights.is_none() {
@@ -797,8 +921,8 @@ impl TspBuilder {
             TspKind::Undefined => {}
         }
 
-        if self.weight_kind.is_some() {
-            match self.weight_kind.unwrap() {
+        if let Some(weight_kind) = self.weight_kind {
+            match weight_kind {
                 WeightKind::Explicit => {
                     if self.edge_weights.is_none() {
                         return Err(ParseTspError::MissingEntry(String::from(K_EDGE_WEIGHT_SEC)));
@@ -824,7 +948,7 @@ impl TspBuilder {
         let tsp = Tsp {
             name: self.name.unwrap(),
             kind: self.kind.unwrap(),
-            comment: self.comment.unwrap_or_else(String::new),
+            comment: self.comment.unwrap_or_default(),
             dim: self.dim.unwrap_or(0),
             capacity: self.capacity.unwrap_or(0.),
             weight_kind: self.weight_kind.unwrap_or(WeightKind::Undefined),
@@ -832,13 +956,13 @@ impl TspBuilder {
             edge_format: self.edge_format.unwrap_or(EdgeFormat::Undefined),
             coord_kind: self.coord_kind.unwrap_or(CoordKind::Undefined),
             disp_kind: self.disp_kind.unwrap_or(DisplayKind::Undefined),
-            node_coords: self.coords.unwrap_or_else(|| HashMap::with_capacity(0)),
-            demands: self.demands.unwrap_or_else(|| HashMap::with_capacity(0)),
-            depots: self.depots.unwrap_or_else(|| HashSet::with_capacity(0)),
-            edge_weights: self.edge_weights.unwrap_or_else(|| Vec::with_capacity(0)),
-            disp_coords: self.disp_coords.unwrap_or_else(|| Vec::with_capacity(0)),
-            fixed_edges: self.fixed_edges.unwrap_or_else(|| Vec::with_capacity(0)),
-            tours: self.tours.unwrap_or_else(|| Vec::with_capacity(0)),
+            node_coords: self.coords.unwrap_or_default(),
+            demands: self.demands.unwrap_or_default(),
+            depots: self.depots.unwrap_or_default(),
+            edge_weights: self.edge_weights.unwrap_or_default(),
+            disp_coords: self.disp_coords.unwrap_or_default(),
+            fixed_edges: self.fixed_edges.unwrap_or_default(),
+            tours: self.tours.unwrap_or_default(),
         };
 
         Ok(tsp)

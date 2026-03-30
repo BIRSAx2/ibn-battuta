@@ -37,7 +37,7 @@ use std::f64;
 /// let solution = solver.solve();
 ///
 /// assert_eq!(solution.tour.len(), 4);
-/// assert!((solution.length - 3.0).abs() < std::f64::EPSILON);
+/// assert!((solution.length - 4.0).abs() < f64::EPSILON);
 /// ```
 pub struct NearestNeighbor {
     tsp: Tsp,
@@ -175,7 +175,7 @@ mod tests {
         let mut solver = NearestNeighbor::new(tsp);
         let solution = solver.solve();
         assert_eq!(solution.tour.len(), 2);
-        assert!((solution.length - 2.0).abs() < std::f64::EPSILON);
+        assert!((solution.length - 2.0).abs() < f64::EPSILON);
     }
 
     #[test]
