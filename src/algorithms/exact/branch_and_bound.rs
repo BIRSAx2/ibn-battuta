@@ -1,5 +1,7 @@
+use crate::algorithms::utils::should_parallelize;
 use crate::Tsp;
 use crate::{Solution, TspSolver};
+use rayon::prelude::*;
 
 /// The `BranchAndBound` struct implements the branch-and-bound algorithm for solving
 /// the Traveling Salesman Problem (TSP). It explores all possible tours and prunes
@@ -130,6 +132,49 @@ impl<'a> BranchAndBound<'a> {
         }
     }
 
+    fn branch_and_bound_collect(
+        &self,
+        current_tour: Vec<usize>,
+        current_cost: f64,
+        visited: Vec<bool>,
+        current_best: f64,
+    ) -> Option<(Vec<usize>, f64)> {
+        if current_tour.len() == self.tsp.dim() {
+            return Some((current_tour, current_cost));
+        }
+
+        let current_node = *current_tour.last().unwrap();
+        let mut best_cost = current_best;
+        let mut best_tour = None;
+
+        for next_node in 0..self.tsp.dim() {
+            if visited[next_node] {
+                continue;
+            }
+
+            let new_cost = current_cost + self.tsp.weight(current_node, next_node);
+            if new_cost >= best_cost {
+                continue;
+            }
+
+            let mut new_visited = visited.clone();
+            new_visited[next_node] = true;
+            let mut new_tour = current_tour.clone();
+            new_tour.push(next_node);
+
+            if let Some((candidate_tour, candidate_cost)) =
+                self.branch_and_bound_collect(new_tour, new_cost, new_visited, best_cost)
+            {
+                if candidate_cost < best_cost {
+                    best_cost = candidate_cost;
+                    best_tour = Some(candidate_tour);
+                }
+            }
+        }
+
+        best_tour.map(|tour| (tour, best_cost))
+    }
+
     /// Runs the branch-and-bound algorithm to find the optimal tour.
     ///
     /// This function initializes the required data structures and starts the
@@ -137,7 +182,29 @@ impl<'a> BranchAndBound<'a> {
     pub fn run(&mut self) {
         let mut visited = vec![false; self.tsp.dim()];
         visited[0] = true; // Start from the first city
-        self.branch_and_bound(vec![0], 0.0, visited);
+        let starting_branches: Vec<usize> = (1..self.tsp.dim()).collect();
+
+        if should_parallelize(starting_branches.len()) {
+            if let Some((best_tour, best_cost)) = starting_branches
+                .into_par_iter()
+                .filter_map(|next_node| {
+                    let mut branch_visited = visited.clone();
+                    branch_visited[next_node] = true;
+                    self.branch_and_bound_collect(
+                        vec![0, next_node],
+                        self.tsp.weight(0, next_node),
+                        branch_visited,
+                        f64::INFINITY,
+                    )
+                })
+                .min_by(|lhs, rhs| lhs.1.total_cmp(&rhs.1))
+            {
+                self.best_tour = best_tour;
+                self.best_cost = best_cost;
+            }
+        } else {
+            self.branch_and_bound(vec![0], 0.0, visited);
+        }
     }
 }
 

@@ -1,7 +1,9 @@
+use crate::algorithms::utils::should_parallelize;
 use crate::algorithms::{Solution, TspSolver};
 use crate::parser::Tsp;
 use rand::prelude::*;
 use rand::rngs::StdRng;
+use rayon::prelude::*;
 use std::cmp::Ordering;
 use std::f64;
 
@@ -140,23 +142,51 @@ impl GeneticAlgorithm {
             .max(1)
             .min(self.tsp.dim());
 
-        for start_index in 0..greedy_count {
-            let (tour, cost) = self.build_greedy_tour(start_index);
-            self.population.push(tour);
-            self.population_costs.push(cost);
-        }
+        let greedy_tours: Vec<(Vec<usize>, f64)> = if should_parallelize(greedy_count) {
+            (0..greedy_count)
+                .into_par_iter()
+                .map(|start_index| self.build_greedy_tour(start_index))
+                .collect()
+        } else {
+            (0..greedy_count)
+                .map(|start_index| self.build_greedy_tour(start_index))
+                .collect()
+        };
+        self.population
+            .extend(greedy_tours.iter().map(|(tour, _)| tour.clone()));
+        self.population_costs
+            .extend(greedy_tours.iter().map(|(_, cost)| *cost));
 
-        while self.population.len() < self.population_size {
-            let (tour, cost) = self.random_tour();
-            self.population.push(tour);
-            self.population_costs.push(cost);
-        }
+        let random_count = self.population_size - self.population.len();
+        let random_tours: Vec<(Vec<usize>, f64)> = if should_parallelize(random_count) {
+            let tsp = self.tsp.clone();
+            let seed = self.seed;
+            (0..random_count)
+                .into_par_iter()
+                .map(|idx| Self::random_tour_from_seed(&tsp, seed.wrapping_add(idx as u64 + 1)))
+                .collect()
+        } else {
+            (0..random_count).map(|_| self.random_tour()).collect()
+        };
+        self.population
+            .extend(random_tours.iter().map(|(tour, _)| tour.clone()));
+        self.population_costs
+            .extend(random_tours.iter().map(|(_, cost)| *cost));
     }
 
     fn random_tour(&mut self) -> (Vec<usize>, f64) {
         let mut tour: Vec<usize> = (0..self.tsp.dim()).collect();
         tour.shuffle(&mut self.rng);
         let cost = self.calculate_tour_cost(&tour);
+        (tour, cost)
+    }
+
+    fn random_tour_from_seed(tsp: &Tsp, seed: u64) -> (Vec<usize>, f64) {
+        let mut rng = StdRng::seed_from_u64(seed);
+        let mut tour: Vec<usize> = (0..tsp.dim()).collect();
+        tour.shuffle(&mut rng);
+        let cost = tour.windows(2).map(|w| tsp.weight(w[0], w[1])).sum::<f64>()
+            + tsp.weight(*tour.last().unwrap(), tour[0]);
         (tour, cost)
     }
 

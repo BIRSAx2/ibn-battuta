@@ -330,22 +330,15 @@ mod tests {
     }
 
     #[test]
-    fn test_gr17() {
+    fn test_bier127_seeded_quality() {
         let path = "data/tsplib/bier127.tsp";
         let tsp = TspBuilder::parse_path(path).unwrap();
 
-        let sol = test_instance(tsp);
+        let mut solver = SimulatedAnnealing::with_seed(tsp, 7);
+        let sol = solver.solve();
         let best_known = 118282.0;
         let gap = (sol.length - best_known) / best_known;
-        assert!(gap < 0.1, "Gap is too large: {:.2}%", gap * 100.0);
-    }
-
-    fn test_instance(tsp: Tsp) -> Solution {
-        let size = tsp.dim();
-        let mut solver = SimulatedAnnealing::new(tsp);
-        let solution = solver.solve();
-        assert_eq!(solution.tour.len(), size);
-        solution
+        assert!(gap < 0.05, "Gap is too large: {:.2}%", gap * 100.0);
     }
 
     #[test]

@@ -1,4 +1,5 @@
 use std::fmt::{Display, Formatter};
+use std::sync::OnceLock;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SolverSupport {
@@ -55,4 +56,17 @@ impl Solver {
             | Self::SimulatedAnnealing2Opt => SolverSupport::Experimental,
         }
     }
+}
+
+pub fn should_parallelize(work_items: usize) -> bool {
+    work_items > 1 && available_parallelism() > 1
+}
+
+pub fn available_parallelism() -> usize {
+    static PARALLELISM: OnceLock<usize> = OnceLock::new();
+    *PARALLELISM.get_or_init(|| {
+        std::thread::available_parallelism()
+            .map(usize::from)
+            .unwrap_or(1)
+    })
 }

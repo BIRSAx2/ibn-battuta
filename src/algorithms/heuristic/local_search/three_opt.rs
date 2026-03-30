@@ -1,5 +1,7 @@
+use crate::algorithms::utils::should_parallelize;
 use crate::algorithms::{Solution, TspSolver};
 use crate::parser::Tsp;
+use rayon::prelude::*;
 
 /// A struct representing the 3-opt algorithm for solving the Traveling Salesman Problem (TSP).
 ///
@@ -43,43 +45,61 @@ impl ThreeOpt<'_> {
     /// in tour cost. The process continues until no further improvement is possible.
     pub fn optimize(&mut self) {
         let n = self.tour.len();
-        let mut improved = true;
 
         if n <= 3 {
             return;
         }
 
-        while improved {
-            improved = false;
-            for i in 0..n - 2 {
-                for j in i + 2..n - 1 {
-                    for k in j + 2..n + (i > 0) as usize {
-                        if k >= n {
-                            continue;
-                        } // Ensure k stays in bounds
+        while let Some((i, j, k, new_tour, new_cost)) = self.best_three_opt_move() {
+            self.tour = new_tour;
+            self.cost = new_cost;
 
-                        let new_tours = self.generate_new_tours(i, j, k);
-
-                        for new_tour in new_tours {
-                            let new_cost = self.calculate_tour_cost_with(&new_tour);
-
-                            if new_cost < self.cost {
-                                self.tour = new_tour;
-                                self.cost = new_cost;
-                                improved = true;
-
-                                if self.verbose {
-                                    println!(
-										"3OPT: Improved tour at segments ({}, {}, {}), new cost: {}",
-										i, j, k, self.cost
-									);
-                                }
-                            }
-                        }
-                    }
-                }
+            if self.verbose {
+                println!(
+                    "3OPT: Improved tour at segments ({}, {}, {}), new cost: {}",
+                    i, j, k, self.cost
+                );
             }
         }
+    }
+
+    fn best_three_opt_move(&self) -> Option<(usize, usize, usize, Vec<usize>, f64)> {
+        let n = self.tour.len();
+        let triples: Vec<(usize, usize, usize)> = (0..n - 2)
+            .flat_map(|i| {
+                (i + 2..n - 1).flat_map(move |j| {
+                    (j + 2..n + (i > 0) as usize)
+                        .filter(move |&k| k < n)
+                        .map(move |k| (i, j, k))
+                })
+            })
+            .collect();
+
+        let evaluate = |(i, j, k): (usize, usize, usize)| {
+            self.generate_new_tours(i, j, k)
+                .into_iter()
+                .map(|tour| {
+                    let cost = self.calculate_tour_cost_with(&tour);
+                    (i, j, k, tour, cost)
+                })
+                .min_by(|lhs, rhs| lhs.4.total_cmp(&rhs.4))
+        };
+
+        let candidate = if should_parallelize(triples.len()) {
+            triples
+                .into_par_iter()
+                .filter_map(evaluate)
+                .filter(|(_, _, _, _, cost)| *cost < self.cost)
+                .min_by(|lhs, rhs| lhs.4.total_cmp(&rhs.4))
+        } else {
+            triples
+                .into_iter()
+                .filter_map(evaluate)
+                .filter(|(_, _, _, _, cost)| *cost < self.cost)
+                .min_by(|lhs, rhs| lhs.4.total_cmp(&rhs.4))
+        }?;
+
+        Some(candidate)
     }
 
     /// Generates new tours by performing 2-opt and 3-opt moves.

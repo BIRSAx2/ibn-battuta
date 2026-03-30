@@ -1,8 +1,10 @@
+use crate::algorithms::utils::should_parallelize;
 use crate::algorithms::{Solution, TspSolver};
 use crate::parser::Tsp;
 use crate::NearestNeighbor;
 use rand::prelude::*;
 use rand::rngs::StdRng;
+use rayon::prelude::*;
 use std::cmp::Ordering;
 use std::f64;
 use std::mem;
@@ -180,10 +182,24 @@ impl AntColonySystem {
     }
 
     fn initialize_heuristic(&mut self) {
-        for i in 0..self.tsp.dim() {
-            for j in 0..self.tsp.dim() {
-                if i != j {
-                    self.heuristic_scores[i][j] = (1.0 / self.tsp.weight(i, j)).powf(self.beta);
+        let n = self.tsp.dim();
+        if should_parallelize(n) {
+            self.heuristic_scores
+                .par_iter_mut()
+                .enumerate()
+                .for_each(|(i, row)| {
+                    for (j, score) in row.iter_mut().enumerate() {
+                        if i != j {
+                            *score = (1.0 / self.tsp.weight(i, j)).powf(self.beta);
+                        }
+                    }
+                });
+        } else {
+            for i in 0..n {
+                for j in 0..n {
+                    if i != j {
+                        self.heuristic_scores[i][j] = (1.0 / self.tsp.weight(i, j)).powf(self.beta);
+                    }
                 }
             }
         }
@@ -191,21 +207,25 @@ impl AntColonySystem {
 
     fn initialize_candidate_lists(&mut self) {
         let n = self.tsp.dim();
-        self.candidate_lists = vec![vec![]; n];
-
-        for i in 0..n {
+        let build_candidates = |i: usize| {
             let mut candidates: Vec<(usize, f64)> = (0..n)
                 .filter(|&j| i != j)
                 .map(|j| (j, self.tsp.weight(i, j)))
                 .collect();
 
             candidates.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(Ordering::Equal));
-            self.candidate_lists[i] = candidates
+            candidates
                 .into_iter()
                 .take(self.candidate_list_size)
                 .map(|(j, _)| j)
-                .collect();
-        }
+                .collect::<Vec<_>>()
+        };
+
+        self.candidate_lists = if should_parallelize(n) {
+            (0..n).into_par_iter().map(build_candidates).collect()
+        } else {
+            (0..n).map(build_candidates).collect()
+        };
     }
 
     fn construct_solution(&mut self) -> Vec<usize> {

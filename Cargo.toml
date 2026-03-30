@@ -16,10 +16,10 @@ readme = "README.md"
 [dependencies]
 getset = "0.1.2"
 rand = "0.8.5"
+rayon = "1.10.0"
 
 [dev-dependencies]
 approx = "0.5.1"
-rayon = "1.10.0"
 
 [[bench]]
 name = "benchmarks"

@@ -1,8 +1,10 @@
+use crate::algorithms::utils::should_parallelize;
 use crate::algorithms::{Solution, TspSolver};
 use crate::parser::Tsp;
 use crate::NearestNeighbor;
 use rand::prelude::*;
 use rand::rngs::StdRng;
+use rayon::prelude::*;
 use std::cmp::Ordering;
 use std::f64;
 
@@ -73,10 +75,23 @@ impl AntSystem {
         let pheromones = vec![vec![initial_pheromone; dim]; dim];
         let pheromone_scores = vec![vec![initial_pheromone.powf(alpha); dim]; dim];
         let mut heuristic_scores = vec![vec![0.0; dim]; dim];
-        for (i, row) in heuristic_scores.iter_mut().enumerate() {
-            for (j, value) in row.iter_mut().enumerate() {
-                if i != j {
-                    *value = (1.0 / tsp.weight(i, j)).powf(beta);
+        if should_parallelize(dim) {
+            heuristic_scores
+                .par_iter_mut()
+                .enumerate()
+                .for_each(|(i, row)| {
+                    for (j, value) in row.iter_mut().enumerate() {
+                        if i != j {
+                            *value = (1.0 / tsp.weight(i, j)).powf(beta);
+                        }
+                    }
+                });
+        } else {
+            for (i, row) in heuristic_scores.iter_mut().enumerate() {
+                for (j, value) in row.iter_mut().enumerate() {
+                    if i != j {
+                        *value = (1.0 / tsp.weight(i, j)).powf(beta);
+                    }
                 }
             }
         }
@@ -131,19 +146,24 @@ impl AntSystem {
     fn initialize_candidate_lists(&mut self) {
         let n = self.tsp.dim();
         let candidate_list_size = self.candidate_list_size();
-
-        for i in 0..n {
+        let build_candidates = |i: usize| {
             let mut candidates: Vec<(usize, f64)> = (0..n)
                 .filter(|&j| i != j)
                 .map(|j| (j, self.tsp.weight(i, j)))
                 .collect();
             candidates.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(Ordering::Equal));
-            self.candidate_lists[i] = candidates
+            candidates
                 .into_iter()
                 .take(candidate_list_size)
                 .map(|(j, _)| j)
-                .collect();
-        }
+                .collect::<Vec<_>>()
+        };
+
+        self.candidate_lists = if should_parallelize(n) {
+            (0..n).into_par_iter().map(build_candidates).collect()
+        } else {
+            (0..n).map(build_candidates).collect()
+        };
     }
 
     /// Constructs a solution (tour) for the TSP using the Ant System algorithm.

@@ -1,6 +1,8 @@
+use crate::algorithms::utils::should_parallelize;
 use crate::algorithms::{Solution, TspSolver};
 use crate::parser::Tsp;
 use crate::NearestNeighbor;
+use rayon::prelude::*;
 
 /// The `TwoOpt` struct implements the 2-opt local search optimization algorithm for the Traveling Salesman Problem (TSP).
 ///
@@ -132,37 +134,53 @@ impl TwoOpt {
             return;
         }
 
-        let mut improved = true;
+        while let Some((i, j, new_cost)) = self.best_two_opt_move() {
+            Self::swap_2opt(&mut self.tour, i + 1, j);
+            self.cost = new_cost;
 
-        while improved {
-            improved = false;
-            for i in 0..n - 2 {
-                for j in i + 2..n {
-                    let current_distance = self.tsp.weight(self.tour[i], self.tour[i + 1])
-                        + self.tsp.weight(self.tour[j], self.tour[(j + 1) % n]);
-
-                    let new_distance = self.tsp.weight(self.tour[i], self.tour[j])
-                        + self.tsp.weight(self.tour[i + 1], self.tour[(j + 1) % n]);
-
-                    if new_distance < current_distance {
-                        Self::swap_2opt(&mut self.tour, i + 1, j);
-                        self.cost = self.calculate_tour_cost();
-                        improved = true;
-
-                        if self.verbose {
-                            println!(
-                                "2OPT: Swapped edges ({} - {}) and ({} - {}), new cost: {}",
-                                self.tour[i],
-                                self.tour[i + 1],
-                                self.tour[j],
-                                self.tour[(j + 1) % n],
-                                self.cost
-                            );
-                        }
-                    }
-                }
+            if self.verbose {
+                println!(
+                    "2OPT: Swapped edges ({} - {}) and ({} - {}), new cost: {}",
+                    self.tour[i],
+                    self.tour[i + 1],
+                    self.tour[j],
+                    self.tour[(j + 1) % n],
+                    self.cost
+                );
             }
         }
+    }
+
+    fn best_two_opt_move(&self) -> Option<(usize, usize, f64)> {
+        let n = self.tour.len();
+        let moves: Vec<(usize, usize)> = (0..n - 2)
+            .flat_map(|i| (i + 2..n).map(move |j| (i, j)))
+            .collect();
+
+        let evaluate = |(i, j): (usize, usize)| {
+            let current_distance = self.tsp.weight(self.tour[i], self.tour[i + 1])
+                + self.tsp.weight(self.tour[j], self.tour[(j + 1) % n]);
+            let new_distance = self.tsp.weight(self.tour[i], self.tour[j])
+                + self.tsp.weight(self.tour[i + 1], self.tour[(j + 1) % n]);
+            let gain = current_distance - new_distance;
+            (i, j, gain)
+        };
+
+        let best = if should_parallelize(moves.len()) {
+            moves
+                .into_par_iter()
+                .map(evaluate)
+                .filter(|(_, _, gain)| *gain > 0.0)
+                .max_by(|lhs, rhs| lhs.2.total_cmp(&rhs.2))
+        } else {
+            moves
+                .into_iter()
+                .map(evaluate)
+                .filter(|(_, _, gain)| *gain > 0.0)
+                .max_by(|lhs, rhs| lhs.2.total_cmp(&rhs.2))
+        }?;
+
+        Some((best.0, best.1, self.cost - best.2))
     }
 }
 

@@ -1,5 +1,7 @@
+use crate::algorithms::utils::should_parallelize;
 use crate::algorithms::{Solution, TspSolver};
 use crate::Tsp;
+use rayon::prelude::*;
 use std::f64;
 
 /// The `BellmanHeldKarp` struct implements the Held-Karp dynamic programming algorithm
@@ -116,7 +118,8 @@ impl BellmanHeldKarp {
     /// ```
     pub fn bellman_held_karp(&mut self) {
         let n = self.tsp.dim();
-        let dist = |i: usize, j: usize| self.tsp.weight(i, j);
+        let tsp = &self.tsp;
+        let dist = |i: usize, j: usize| tsp.weight(i, j);
 
         // Initialize the base cases
         for i in 0..n - 1 {
@@ -125,35 +128,90 @@ impl BellmanHeldKarp {
 
         // Iterate over subsets of increasing size
         for size in 2..n {
-            for s in 1..(1 << (n - 1)) {
-                if (s as i32).count_ones() as usize == size {
-                    for t in 0..n - 1 {
-                        if (s & (1 << t)) != 0 {
-                            let mut min_cost = f64::INFINITY;
+            let subsets: Vec<usize> = (1..(1 << (n - 1)))
+                .filter(|&s| (s as i32).count_ones() as usize == size)
+                .collect();
+            let opt = &self.opt;
+
+            let layer_updates: Vec<(usize, usize, f64)> = if should_parallelize(subsets.len()) {
+                subsets
+                    .par_iter()
+                    .flat_map_iter(|&s| {
+                        (0..n - 1).filter_map(move |t| {
+                            if (s & (1 << t)) == 0 {
+                                return None;
+                            }
+
                             let prev_s = s & !(1 << t);
-                            for q in 0..n - 1 {
+                            let mut min_cost = f64::INFINITY;
+                            for (q, row) in opt.iter().enumerate().take(n - 1) {
                                 if (prev_s & (1 << q)) != 0 {
-                                    if let Some(cost) = self.opt[q][prev_s] {
+                                    if let Some(cost) = row[prev_s] {
                                         min_cost = f64::min(min_cost, cost + dist(q, t));
                                     }
                                 }
                             }
-                            self.opt[t][s] = Some(min_cost);
-                        }
-                    }
-                }
+
+                            Some((t, s, min_cost))
+                        })
+                    })
+                    .collect()
+            } else {
+                subsets
+                    .iter()
+                    .flat_map(|&s| {
+                        (0..n - 1).filter_map(move |t| {
+                            if (s & (1 << t)) == 0 {
+                                return None;
+                            }
+
+                            let prev_s = s & !(1 << t);
+                            let mut min_cost = f64::INFINITY;
+                            for (q, row) in opt.iter().enumerate().take(n - 1) {
+                                if (prev_s & (1 << q)) != 0 {
+                                    if let Some(cost) = row[prev_s] {
+                                        min_cost = f64::min(min_cost, cost + dist(q, t));
+                                    }
+                                }
+                            }
+
+                            Some((t, s, min_cost))
+                        })
+                    })
+                    .collect()
+            };
+
+            for (t, s, min_cost) in layer_updates {
+                self.opt[t][s] = Some(min_cost);
             }
         }
 
         // Calculate the minimum cost to complete the tour
-        for t in 0..n - 1 {
-            if let Some(cost) = self.opt[t][(1 << (n - 1)) - 1] {
-                let final_cost = cost + dist(t, n - 1);
-                if final_cost < self.best_cost {
-                    self.best_cost = final_cost;
-                    self.best_tour = self.build_tour(t, (1 << (n - 1)) - 1);
-                }
-            }
+        let full_mask = (1 << (n - 1)) - 1;
+        let best_terminal = if should_parallelize(n - 1) {
+            (0..n - 1)
+                .into_par_iter()
+                .filter_map(|t| {
+                    self.opt[t][full_mask].map(|cost| {
+                        let final_cost = cost + dist(t, n - 1);
+                        (t, final_cost)
+                    })
+                })
+                .min_by(|lhs, rhs| lhs.1.total_cmp(&rhs.1))
+        } else {
+            (0..n - 1)
+                .filter_map(|t| {
+                    self.opt[t][full_mask].map(|cost| {
+                        let final_cost = cost + dist(t, n - 1);
+                        (t, final_cost)
+                    })
+                })
+                .min_by(|lhs, rhs| lhs.1.total_cmp(&rhs.1))
+        };
+
+        if let Some((t, final_cost)) = best_terminal {
+            self.best_cost = final_cost;
+            self.best_tour = self.build_tour(t, full_mask);
         }
     }
 

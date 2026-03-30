@@ -144,12 +144,7 @@ impl RBACS2Opt {
         }
 
         let mut insert_idx = end % n;
-        for &city in parent_b
-            .iter()
-            .cycle()
-            .skip(end)
-            .take(n)
-        {
+        for &city in parent_b.iter().cycle().skip(end).take(n) {
             if used[city] {
                 continue;
             }
