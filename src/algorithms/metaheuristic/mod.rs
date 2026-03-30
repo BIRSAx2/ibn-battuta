@@ -1,3 +1,5 @@
+//! Experimental metaheuristic solvers.
+
 pub mod ant_colony;
 pub mod ga_two_opt;
 pub mod genetic_algorithm;

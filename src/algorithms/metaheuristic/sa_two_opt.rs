@@ -1,11 +1,13 @@
-use crate::{SimulatedAnnealing, Solution, Tsp, TspSolver, TwoOpt};
+use crate::experimental::SimulatedAnnealing;
+use crate::{Solution, Tsp, TspSolver, TwoOpt};
 
 /// A hybrid solver that combines Simulated Annealing and 2-Opt local search
 ///
 /// # Example
 ///
 /// ```
-/// use ibn_battuta::{SA2Opt, Tsp, TspSolver, TspBuilder};
+/// use ibn_battuta::experimental::SA2Opt;
+/// use ibn_battuta::{Tsp, TspSolver, TspBuilder};
 ///
 /// let tsp_data = "
 /// NAME : example
@@ -45,7 +47,8 @@ impl SA2Opt {
     /// # Example
     ///
     /// ```
-    /// use ibn_battuta::{SA2Opt , TspBuilder};
+    /// use ibn_battuta::experimental::SA2Opt;
+    /// use ibn_battuta::TspBuilder;
     ///
     /// let tsp_data = "
     /// NAME : example
@@ -105,7 +108,8 @@ impl TspSolver for SA2Opt {
 
 #[cfg(test)]
 mod tests {
-    use crate::{SA2Opt, Tsp, TspBuilder, TspSolver};
+    use crate::experimental::SA2Opt;
+    use crate::{Tsp, TspBuilder, TspSolver};
     #[test]
     fn test_gr17() {
         let path = "data/tsplib/gr17.tsp";

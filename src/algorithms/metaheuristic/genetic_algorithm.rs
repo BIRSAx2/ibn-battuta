@@ -12,7 +12,8 @@ use std::f64;
 /// # Examples
 ///
 /// ```
-/// use ibn_battuta::{GeneticAlgorithm, TspBuilder, TspSolver};
+/// use ibn_battuta::experimental::GeneticAlgorithm;
+/// use ibn_battuta::{TspBuilder, TspSolver};
 ///
 /// let tsp_data = "
 ///     NAME : example
@@ -58,7 +59,8 @@ impl GeneticAlgorithm {
     /// # Examples
     ///
     /// ```
-    /// use ibn_battuta::{GeneticAlgorithm, TspBuilder};
+    /// use ibn_battuta::experimental::GeneticAlgorithm;
+    /// use ibn_battuta::TspBuilder;
     ///
     /// let tsp = TspBuilder::parse_str("
     /// NAME : example

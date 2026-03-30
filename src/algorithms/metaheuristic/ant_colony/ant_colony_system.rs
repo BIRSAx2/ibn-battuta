@@ -12,7 +12,8 @@ use std::f64;
 /// # Example
 ///
 /// ```
-/// use ibn_battuta::{AntColonySystem, TspBuilder, TspSolver};
+/// use ibn_battuta::experimental::AntColonySystem;
+/// use ibn_battuta::{TspBuilder, TspSolver};
 ///
 /// let tsp = TspBuilder::parse_str("
 ///     NAME : example
@@ -69,7 +70,8 @@ impl AntColonySystem {
     /// # Example
     ///
     /// ```
-    /// use ibn_battuta::{AntColonySystem, TspBuilder};
+    /// use ibn_battuta::experimental::AntColonySystem;
+    /// use ibn_battuta::TspBuilder;
     ///
     /// let tsp = TspBuilder::parse_str("
     ///     NAME : example

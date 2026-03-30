@@ -1,4 +1,5 @@
-use crate::{RedBlackACS, Solution, Tsp, TspSolver, TwoOpt};
+use crate::experimental::RedBlackACS;
+use crate::{Solution, Tsp, TspSolver, TwoOpt};
 
 /// This module implements the RBACS2Opt algorithm, which combines the Red-Black Ant Colony System (RBACS)
 /// with the 2-opt local search algorithm for solving the Traveling Salesman Problem (TSP).
@@ -106,7 +107,8 @@ impl TspSolver for RBACS2Opt {
 #[cfg(test)]
 mod tests {
     use crate::algorithms::TspSolver;
-    use crate::{RBACS2Opt, TspBuilder};
+    use crate::experimental::RBACS2Opt;
+    use crate::TspBuilder;
 
     #[test]
     fn solves_simple_tsp_with_rbacs2opt() {

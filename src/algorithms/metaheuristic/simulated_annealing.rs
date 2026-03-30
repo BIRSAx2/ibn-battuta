@@ -35,8 +35,8 @@ impl SimulatedAnnealing {
     /// # Example
     ///
     /// ```
+    /// use ibn_battuta::experimental::SimulatedAnnealing;
     /// use ibn_battuta::TspBuilder;
-    /// use ibn_battuta::SimulatedAnnealing;
     ///
     /// let data = "
     /// NAME : example

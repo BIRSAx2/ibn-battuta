@@ -1,4 +1,5 @@
-use crate::{AntColonySystem, Solution, Tsp, TspSolver, TwoOpt};
+use crate::experimental::AntColonySystem;
+use crate::{Solution, Tsp, TspSolver, TwoOpt};
 
 /// This module implements the ACS2Opt algorithm, which combines the Ant Colony System (ACS)
 /// with the 2-opt local search algorithm for solving the Traveling Salesman Problem (TSP).
@@ -103,7 +104,8 @@ impl TspSolver for ACS2Opt {
 #[cfg(test)]
 mod tests {
     use crate::algorithms::TspSolver;
-    use crate::{ACS2Opt, TspBuilder};
+    use crate::experimental::ACS2Opt;
+    use crate::TspBuilder;
 
     #[test]
     fn solves_simple_tsp_with_acs2opt() {

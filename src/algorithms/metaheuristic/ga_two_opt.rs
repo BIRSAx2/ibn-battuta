@@ -1,4 +1,5 @@
-use crate::{GeneticAlgorithm, Solution, Tsp, TspSolver, TwoOpt};
+use crate::experimental::GeneticAlgorithm;
+use crate::{Solution, Tsp, TspSolver, TwoOpt};
 
 /// GA2Opt is a hybrid algorithm that combines Genetic Algorithm (GA) with 2-Opt local search
 /// to solve the Traveling Salesman Problem (TSP).
@@ -22,7 +23,8 @@ impl GA2Opt {
     /// # Examples
     ///
     /// ```no_run
-    /// use ibn_battuta::{Tsp, TspBuilder, GA2Opt};
+    /// use ibn_battuta::experimental::GA2Opt;
+    /// use ibn_battuta::{Tsp, TspBuilder};
     ///
     /// let tsp = TspBuilder::parse_path("path/to/tsp/file.tsp").unwrap();
     /// let solver = GA2Opt::with_options(tsp, 100, 5, 0.7, 0.01, 500);
@@ -61,7 +63,8 @@ impl TspSolver for GA2Opt {
     /// # Examples
     ///
     /// ```no_run
-    /// use ibn_battuta::{ GA2Opt, TspBuilder, TspSolver};
+    /// use ibn_battuta::experimental::GA2Opt;
+    /// use ibn_battuta::{TspBuilder, TspSolver};
     ///
     /// let tsp = TspBuilder::parse_path("path/to/tsp/file.tsp").unwrap();
     /// let mut solver = GA2Opt::with_options(tsp, 100, 5, 0.7, 0.01, 500);
@@ -109,6 +112,7 @@ impl TspSolver for GA2Opt {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::experimental::GA2Opt;
     use crate::{NearestNeighbor, TspBuilder};
 
     #[test]

@@ -12,8 +12,9 @@ use std::{cmp::Ordering, f64, mem};
 /// # Example
 ///
 /// ```no_run
-/// use ibn_battuta::{RedBlackACS, TspBuilder};
-/// use ibn_battuta::algorithms::TspSolver;
+/// use ibn_battuta::experimental::RedBlackACS;
+/// use ibn_battuta::TspBuilder;
+/// use ibn_battuta::TspSolver;
 ///
 /// let tsp = TspBuilder::parse_path("path/to/tsp/file.tsp").unwrap();
 /// let mut solver = RedBlackACS::new(tsp, 1.0, 2.0, 0.1, 0.2, 0.9, 20, 1000, 15);
@@ -60,7 +61,8 @@ impl RedBlackACS {
     /// # Example
     ///
     /// ```no_run
-    /// use ibn_battuta::{RedBlackACS, TspBuilder};
+    /// use ibn_battuta::experimental::RedBlackACS;
+    /// use ibn_battuta::TspBuilder;
     /// let tsp = TspBuilder::parse_path("path/to/tsp/file.tsp").unwrap();
     /// let solver = RedBlackACS::new(tsp, 1.0, 2.0, 0.1, 0.2, 0.9, 20, 1000, 15);
     /// ```
