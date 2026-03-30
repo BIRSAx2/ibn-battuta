@@ -39,7 +39,34 @@ impl RBACS2Opt {
         max_iterations: usize,
         candidate_list_size: usize,
     ) -> RBACS2Opt {
-        let acs = RedBlackACS::new(
+        Self::with_options_and_seed(
+            tsp,
+            alpha,
+            beta,
+            rho_red,
+            rho_black,
+            q0,
+            num_ants,
+            max_iterations,
+            candidate_list_size,
+            rand::random(),
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn with_options_and_seed(
+        tsp: Tsp,
+        alpha: f64,
+        beta: f64,
+        rho_red: f64,
+        rho_black: f64,
+        q0: f64,
+        num_ants: usize,
+        max_iterations: usize,
+        candidate_list_size: usize,
+        seed: u64,
+    ) -> RBACS2Opt {
+        let acs = RedBlackACS::new_with_seed(
             tsp.clone(),
             alpha,
             beta,
@@ -49,6 +76,7 @@ impl RBACS2Opt {
             num_ants,
             max_iterations,
             candidate_list_size,
+            seed,
         );
 
         RBACS2Opt {
@@ -56,6 +84,10 @@ impl RBACS2Opt {
             rbacs: acs,
             last_solution: Solution::default(),
         }
+    }
+
+    pub fn seed(&self) -> u64 {
+        self.rbacs.seed()
     }
 }
 
@@ -195,5 +227,30 @@ mod tests {
 
         assert_eq!(solution.tour.len(), 3);
         assert!((solution.length - 17.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn uses_seeded_runs_deterministically() {
+        let data = "
+		NAME : simple
+		TYPE : TSP
+		DIMENSION : 4
+		EDGE_WEIGHT_TYPE: EUC_2D
+		NODE_COORD_SECTION
+		  1 0.0 0.0
+		  2 0.0 1.0
+		  3 1.0 1.0
+		  4 1.0 0.0
+		EOF
+		";
+
+        let tsp = TspBuilder::parse_str(data).unwrap();
+        let mut lhs =
+            RBACS2Opt::with_options_and_seed(tsp.clone(), 0.1, 2.0, 0.1, 0.2, 0.9, 10, 200, 15, 23);
+        let mut rhs =
+            RBACS2Opt::with_options_and_seed(tsp, 0.1, 2.0, 0.1, 0.2, 0.9, 10, 200, 15, 23);
+
+        assert_eq!(lhs.seed(), 23);
+        assert_eq!(lhs.solve(), rhs.solve());
     }
 }

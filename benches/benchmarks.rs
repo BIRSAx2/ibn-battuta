@@ -1,308 +1,76 @@
-use ibn_battuta::algorithms::utils::Solver;
-use ibn_battuta::algorithms::*;
-use ibn_battuta::parser::TspBuilder;
+use ibn_battuta::algorithms::utils::{Solver, SolverSupport};
+use ibn_battuta::experimental::{
+    ACS2Opt, AntColonySystem, AntSystem, GA2Opt, GeneticAlgorithm, LinKernighan, RBACS2Opt,
+    RedBlackACS, SA2Opt, SimulatedAnnealing,
+};
+use ibn_battuta::{NearestNeighbor, Tsp, TspBuilder, TspSolver, TwoOpt};
 use rayon::prelude::*;
+use std::env;
 use std::fs::{File, OpenOptions};
 use std::io::Write;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-// Define a struct to hold TSP instance data
+const BENCHMARK_BASE_SEED: u64 = 42;
+const DEFAULT_SMALL_RUNS: usize = 3;
+const DEFAULT_FULL_RUNS: usize = 10;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum BenchmarkProfile {
+    Small,
+    Full,
+}
+
 #[derive(Clone, Debug)]
-pub struct TspInstance {
-    pub path: String,
-    pub best_known: f64,
-}
-
-// Define a struct to hold benchmark results
-#[derive(Clone, Debug, PartialEq)]
-pub struct BenchmarkResult {
-    pub instance_name: String,
-    pub algorithm_name: String,
-    pub execution_time: Duration,
-    pub total_cost: f64,
-    pub best_known: f64,
-    pub solution_quality: f64,
-    pub solution: Vec<usize>,
-}
-
-fn run_parallel_benchmarks(
-    instances: &[TspInstance],
-    algorithms: &[Solver],
-    params: &[Vec<f64>],
-    num_threads: usize,
-    _csv_file: Arc<Mutex<std::fs::File>>,
-) {
-    // println!("Starting parallel benchmarks with {} threads", num_threads);
-    let pool = rayon::ThreadPoolBuilder::new()
-        .num_threads(num_threads)
-        .build()
-        .unwrap();
-
-    pool.install(|| {
-        instances.par_iter().for_each(|instance| {
-            // println!("Processing instance: {}", instance.path);
-            algorithms
-                .par_iter()
-                .enumerate()
-                .for_each(|(idx, algorithm)| {
-                    let params = &params[idx];
-                    // println!("> Benchmarking {} on instance: {}", algorithm, instance.path);
-                    let result = run_benchmark_multiple(instance, *algorithm, params.clone(), 10);
-                    // println!("< Finished benchmarking {} on instance: {}", algorithm, instance.path);
-
-                    // Write result to CSV file immediately
-                    // write_result_to_csv(&result, &csv_file);
-                    print_benchmark_result(&result);
-                });
-        });
-    });
-    // println!("Finished all parallel benchmarks");
-}
-
-fn _write_result_to_csv(result: &BenchmarkResult, csv_file: &Arc<Mutex<std::fs::File>>) {
-    let mut file = csv_file.lock().unwrap();
-    writeln!(
-        file,
-        "{},{},{},{:.2},{:.2},{:.2},\"{}\"",
-        result.instance_name,
-        result.algorithm_name,
-        result.execution_time.as_millis(),
-        result.total_cost,
-        result.best_known,
-        result.solution_quality,
-        result
-            .solution
-            .iter()
-            .map(|&x| x.to_string())
-            .collect::<Vec<String>>()
-            .join(" ")
-    )
-    .expect("Unable to write to file");
-}
-
-fn run_benchmark_multiple(
-    instance: &TspInstance,
-    algorithm: Solver,
-    params: Vec<f64>,
+struct BenchmarkConfig {
+    profile: BenchmarkProfile,
     num_runs: usize,
-) -> BenchmarkResult {
-    // println!("Starting {} runs for {} on instance {}", num_runs, algorithm, instance.path);
-    let results: Vec<BenchmarkResult> = (0..num_runs)
-        .into_par_iter()
-        .map(|_i| {
-            // println!("Benchmarking {} on instance {} run {} ", algorithm, instance.path, i);
-            let tsp = Arc::new({
-                match TspBuilder::parse_path(&instance.path) {
-                    Ok(tsp) => tsp,
-                    Err(e) => {
-                        eprintln!("Error parsing TSP instance {} :{}", instance.path, e);
-                        std::process::exit(1);
-                    }
-                }
-            });
-            let start = Instant::now();
-            let mut solver = build_solver(instance.path.clone(), algorithm, &params);
-            let solution = solver.solve();
-            let duration = start.elapsed();
-
-            let quality = (solution.length - instance.best_known) / instance.best_known * 100.0;
-            // println!("Finished run {} for {} on instance {}", i, algorithm, instance.path);
-            BenchmarkResult {
-                instance_name: tsp.name().to_string(),
-                algorithm_name: format!("{}", solver),
-                execution_time: duration,
-                total_cost: solution.length,
-                best_known: instance.best_known,
-                solution_quality: quality,
-                solution: solution.tour,
-            }
-        })
-        .collect();
-
-    let best_result = results
-        .iter()
-        .min_by(|a, b| a.solution_quality.partial_cmp(&b.solution_quality).unwrap())
-        .unwrap()
-        .clone();
-
-    let total_duration: Duration = results.iter().map(|r| r.execution_time).sum();
-    let mut final_result = best_result;
-    final_result.execution_time = total_duration / num_runs as u32; // Average execution time
-                                                                    // println!("Completed all runs for {} on instance {}", algorithm, instance.path);
-    final_result
+    num_threads: usize,
+    csv_path: String,
 }
 
-fn build_solver<'a>(
-    instance: String,
-    algorithm: Solver,
-    params: &[f64],
-) -> Box<dyn TspSolver + 'a> {
-    let tsp = TspBuilder::parse_path(&instance).unwrap();
-    match algorithm {
-        Solver::GeneticAlgorithm => {
-            let population_size = params[0] as usize;
-            let elite_size = params[1] as usize;
-            let crossover_rate = params[2];
-            let mutation_rate = params[3];
-            let max_generations = params[4] as usize;
-            Box::new(GeneticAlgorithm::with_options(
-                tsp,
-                population_size,
-                elite_size,
-                crossover_rate,
-                mutation_rate,
-                max_generations,
-            ))
-        }
+impl BenchmarkConfig {
+    fn from_env() -> Self {
+        let profile = match env::var("IBN_BATTUTA_BENCH_PROFILE")
+            .ok()
+            .as_deref()
+            .map(str::trim)
+        {
+            Some("full") => BenchmarkProfile::Full,
+            _ => BenchmarkProfile::Small,
+        };
 
-        Solver::GeneticAlgorithm2Opt => {
-            let population_size = params[0] as usize;
-            let elite_size = params[1] as usize;
-            let crossover_rate = params[2];
-            let mutation_rate = params[3];
-            let max_generations = params[4] as usize;
-            Box::new(GA2Opt::with_options(
-                tsp,
-                population_size,
-                elite_size,
-                crossover_rate,
-                mutation_rate,
-                max_generations,
-            ))
-        }
+        let default_runs = match profile {
+            BenchmarkProfile::Small => DEFAULT_SMALL_RUNS,
+            BenchmarkProfile::Full => DEFAULT_FULL_RUNS,
+        };
+        let num_runs = env_usize("IBN_BATTUTA_BENCH_RUNS").unwrap_or(default_runs);
+        let num_threads =
+            env_usize("IBN_BATTUTA_BENCH_THREADS").unwrap_or_else(default_thread_count);
+        let csv_path = env::var("IBN_BATTUTA_BENCH_CSV")
+            .unwrap_or_else(|_| "Parallel-TSP-Benchmark.csv".to_string());
 
-        Solver::NearestNeighbor => Box::new(NearestNeighbor::new(tsp)),
-        Solver::TwoOpt => Box::new(TwoOpt::new(tsp)),
-        Solver::LinKernighan => {
-            let mut nn = NearestNeighbor::new(tsp.clone());
-            let base_tour = nn.solve().tour;
-            Box::new(LinKernighan::with_options(tsp, base_tour, true, 1000))
+        BenchmarkConfig {
+            profile,
+            num_runs,
+            num_threads,
+            csv_path,
         }
-        Solver::SimulatedAnnealing => {
-            // let initial_temperature = params[0];
-            // let cooling_rate = params[1];
-            // let min_temperature = params[2];
-            // let max_iterations = params[3] as usize;
-            // let cycles_per_temperature = params[4] as usize;
-            Box::new(SimulatedAnnealing::new(tsp))
-        }
-        Solver::SimulatedAnnealing2Opt => {
-            // let initial_temperature = params[0];
-            // let cooling_rate = params[1];
-            // let min_temperature = params[2];
-            // let max_iterations = params[3] as usize;
-            // let cycles_per_temperature = params[4] as usize;
-            Box::new(SA2Opt::new(tsp))
-        }
-
-        Solver::AntColonySystem => {
-            let alpha = params[0];
-            let beta = params[1];
-            let rho = params[2];
-            let q0 = params[3];
-            let max_iterations = params[4] as usize;
-            let candidate_list_size = params[5] as usize;
-            let num_ants = 10;
-            Box::new(AntColonySystem::with_options(
-                tsp,
-                alpha,
-                beta,
-                rho,
-                q0,
-                num_ants,
-                max_iterations,
-                candidate_list_size,
-            ))
-        }
-        Solver::AntColonySystem2Opt => {
-            let alpha = params[0];
-            let beta = params[1];
-            let rho = params[2];
-            let q0 = params[3];
-            let max_iterations = params[4] as usize;
-            let candidate_list_size = params[5] as usize;
-            let num_ants = 10;
-            Box::new(ACS2Opt::with_options(
-                tsp,
-                alpha,
-                beta,
-                rho,
-                q0,
-                num_ants,
-                max_iterations,
-                candidate_list_size,
-            ))
-        }
-
-        Solver::RedBlackAntColonySystem => {
-            let alpha = params[0];
-            let beta = params[1];
-            let rho_red = params[2];
-            let rho_black = params[3];
-            let q0 = params[4];
-            let num_ants = 10;
-            let max_iterations = params[5] as usize;
-            let candidate_list_size = params[6] as usize;
-
-            Box::new(RedBlackACS::new(
-                tsp,
-                alpha,
-                beta,
-                rho_red,
-                rho_black,
-                q0,
-                num_ants,
-                max_iterations,
-                candidate_list_size,
-            ))
-        }
-
-        Solver::RedBlackAntColonySystem2Opt => {
-            let alpha = params[0];
-            let beta = params[1];
-            let rho_red = params[2];
-            let rho_black = params[3];
-            let q0 = params[4];
-            let num_ants = 10;
-            let max_iterations = params[5] as usize;
-            let candidate_list_size = params[6] as usize;
-
-            Box::new(RBACS2Opt::with_options(
-                tsp,
-                alpha,
-                beta,
-                rho_red,
-                rho_black,
-                q0,
-                num_ants,
-                max_iterations,
-                candidate_list_size,
-            ))
-        }
-
-        Solver::AntSystem => {
-            let alpha = params[0];
-            let beta = params[1];
-            let rho = params[2];
-            let max_iterations = params[4] as usize;
-            let num_ants = 20;
-            Box::new(AntSystem::with_options(
-                tsp,
-                alpha,
-                beta,
-                rho,
-                num_ants,
-                max_iterations,
-            ))
-        }
-        _ => unimplemented!(),
     }
 }
 
-fn benchmark(solvers: &[Solver], params: &[Vec<f64>], num_threads: usize) {
-    // println!("Starting benchmark process");
-    let instances_names = vec![
+fn env_usize(key: &str) -> Option<usize> {
+    env::var(key).ok()?.trim().parse().ok()
+}
+
+fn default_thread_count() -> usize {
+    std::thread::available_parallelism()
+        .map(usize::from)
+        .unwrap_or(1)
+}
+
+fn instance_catalog() -> Vec<(&'static str, f64)> {
+    vec![
         ("eil51", 426.0),
         ("berlin52", 7542.0),
         ("st70", 675.0),
@@ -325,35 +93,345 @@ fn benchmark(solvers: &[Solver], params: &[Vec<f64>], num_threads: usize) {
         ("d2103", 80450.0),
         ("u2319", 234256.0),
         ("rl5915", 565530.0),
-    ];
+    ]
+}
 
-    let instances: Vec<TspInstance> = instances_names
-        .iter()
+fn instances_for_profile(profile: BenchmarkProfile) -> Vec<TspInstance> {
+    let names = match profile {
+        BenchmarkProfile::Small => vec![("eil51", 426.0), ("berlin52", 7542.0), ("st70", 675.0)],
+        BenchmarkProfile::Full => instance_catalog(),
+    };
+
+    names
+        .into_iter()
         .map(|(name, best_known)| TspInstance {
             path: format!("data/tsplib/{}.tsp", name),
-            best_known: *best_known,
+            best_known,
+        })
+        .collect()
+}
+
+// Define a struct to hold TSP instance data
+#[derive(Clone, Debug)]
+pub struct TspInstance {
+    pub path: String,
+    pub best_known: f64,
+}
+
+// Define a struct to hold benchmark results
+#[derive(Clone, Debug, PartialEq)]
+pub struct BenchmarkResult {
+    pub instance_name: String,
+    pub algorithm_name: String,
+    pub support_level: SolverSupport,
+    pub seed: u64,
+    pub execution_time: Duration,
+    pub total_cost: f64,
+    pub best_known: f64,
+    pub solution_quality: f64,
+    pub solution: Vec<usize>,
+}
+
+fn run_parallel_benchmarks(
+    instances: &[TspInstance],
+    algorithms: &[Solver],
+    params: &[Vec<f64>],
+    config: &BenchmarkConfig,
+    csv_file: Arc<Mutex<std::fs::File>>,
+) {
+    let pool = rayon::ThreadPoolBuilder::new()
+        .num_threads(config.num_threads)
+        .build()
+        .unwrap();
+
+    pool.install(|| {
+        instances.par_iter().for_each(|instance| {
+            let tsp = match TspBuilder::parse_path(&instance.path) {
+                Ok(tsp) => tsp,
+                Err(error) => {
+                    eprintln!("Error parsing TSP instance {}: {}", instance.path, error);
+                    return;
+                }
+            };
+
+            algorithms
+                .par_iter()
+                .enumerate()
+                .for_each(|(idx, algorithm)| {
+                    let params = &params[idx];
+                    let result =
+                        run_benchmark_multiple(&tsp, instance, *algorithm, params, config.num_runs);
+                    _write_result_to_csv(&result, &csv_file);
+                    print_benchmark_result(&result);
+                });
+        });
+    });
+}
+
+fn _write_result_to_csv(result: &BenchmarkResult, csv_file: &Arc<Mutex<std::fs::File>>) {
+    let mut file = csv_file.lock().unwrap();
+    writeln!(
+        file,
+        "{},{},{},{},{},{:.2},{:.2},{:.2},\"{}\"",
+        result.instance_name,
+        result.algorithm_name,
+        result.support_level,
+        result.seed,
+        result.execution_time.as_millis(),
+        result.total_cost,
+        result.best_known,
+        result.solution_quality,
+        result
+            .solution
+            .iter()
+            .map(|&x| x.to_string())
+            .collect::<Vec<String>>()
+            .join(" ")
+    )
+    .expect("Unable to write to file");
+}
+
+fn run_benchmark_multiple(
+    tsp: &Tsp,
+    instance: &TspInstance,
+    algorithm: Solver,
+    params: &[f64],
+    num_runs: usize,
+) -> BenchmarkResult {
+    let results: Vec<BenchmarkResult> = (0..num_runs)
+        .into_par_iter()
+        .map(|run_idx| {
+            let seed = BENCHMARK_BASE_SEED.wrapping_add(run_idx as u64);
+            let start = Instant::now();
+            let mut solver = build_solver(tsp.clone(), algorithm, params, seed);
+            let solution = solver.solve();
+            let duration = start.elapsed();
+
+            let quality = (solution.length - instance.best_known) / instance.best_known * 100.0;
+            BenchmarkResult {
+                instance_name: tsp.name().to_string(),
+                algorithm_name: format!("{}", solver),
+                support_level: algorithm.support(),
+                seed,
+                execution_time: duration,
+                total_cost: solution.length,
+                best_known: instance.best_known,
+                solution_quality: quality,
+                solution: solution.tour,
+            }
         })
         .collect();
 
-    // println!("Prepared {} instances for benchmarking", instances.len());
+    let best_result = results
+        .iter()
+        .min_by(|a, b| a.solution_quality.partial_cmp(&b.solution_quality).unwrap())
+        .unwrap()
+        .clone();
 
-    let csv_file = Arc::new(Mutex::new(create_csv_file("Parallel-TSP-Benchmark.csv")));
+    let total_duration: Duration = results.iter().map(|r| r.execution_time).sum();
+    let mut final_result = best_result;
+    final_result.execution_time = total_duration / num_runs as u32; // Average execution time
+    final_result
+}
+
+fn build_solver<'a>(
+    tsp: Tsp,
+    algorithm: Solver,
+    params: &[f64],
+    seed: u64,
+) -> Box<dyn TspSolver + 'a> {
+    match algorithm {
+        Solver::GeneticAlgorithm => {
+            let population_size = params[0] as usize;
+            let elite_size = params[1] as usize;
+            let crossover_rate = params[2];
+            let mutation_rate = params[3];
+            let max_generations = params[4] as usize;
+            Box::new(GeneticAlgorithm::with_options_and_seed(
+                tsp,
+                population_size,
+                elite_size,
+                crossover_rate,
+                mutation_rate,
+                max_generations,
+                seed,
+            ))
+        }
+
+        Solver::GeneticAlgorithm2Opt => {
+            let population_size = params[0] as usize;
+            let elite_size = params[1] as usize;
+            let crossover_rate = params[2];
+            let mutation_rate = params[3];
+            let max_generations = params[4] as usize;
+            Box::new(GA2Opt::with_options_and_seed(
+                tsp,
+                population_size,
+                elite_size,
+                crossover_rate,
+                mutation_rate,
+                max_generations,
+                seed,
+            ))
+        }
+
+        Solver::NearestNeighbor => Box::new(NearestNeighbor::new(tsp)),
+        Solver::TwoOpt => Box::new(TwoOpt::new(tsp)),
+        Solver::LinKernighan => {
+            let mut nn = NearestNeighbor::new(tsp.clone());
+            let base_tour = nn.solve().tour;
+            Box::new(LinKernighan::with_options(tsp, base_tour, true, 1000))
+        }
+        Solver::SimulatedAnnealing => {
+            // let initial_temperature = params[0];
+            // let cooling_rate = params[1];
+            // let min_temperature = params[2];
+            // let max_iterations = params[3] as usize;
+            // let cycles_per_temperature = params[4] as usize;
+            Box::new(SimulatedAnnealing::with_seed(tsp, seed))
+        }
+        Solver::SimulatedAnnealing2Opt => {
+            // let initial_temperature = params[0];
+            // let cooling_rate = params[1];
+            // let min_temperature = params[2];
+            // let max_iterations = params[3] as usize;
+            // let cycles_per_temperature = params[4] as usize;
+            Box::new(SA2Opt::new_with_seed(tsp, seed))
+        }
+
+        Solver::AntColonySystem => {
+            let alpha = params[0];
+            let beta = params[1];
+            let rho = params[2];
+            let q0 = params[3];
+            let max_iterations = params[4] as usize;
+            let candidate_list_size = params[5] as usize;
+            let num_ants = 10;
+            Box::new(AntColonySystem::with_options_and_seed(
+                tsp,
+                alpha,
+                beta,
+                rho,
+                q0,
+                num_ants,
+                max_iterations,
+                candidate_list_size,
+                seed,
+            ))
+        }
+        Solver::AntColonySystem2Opt => {
+            let alpha = params[0];
+            let beta = params[1];
+            let rho = params[2];
+            let q0 = params[3];
+            let max_iterations = params[4] as usize;
+            let candidate_list_size = params[5] as usize;
+            let num_ants = 10;
+            Box::new(ACS2Opt::with_options_and_seed(
+                tsp,
+                alpha,
+                beta,
+                rho,
+                q0,
+                num_ants,
+                max_iterations,
+                candidate_list_size,
+                seed,
+            ))
+        }
+
+        Solver::RedBlackAntColonySystem => {
+            let alpha = params[0];
+            let beta = params[1];
+            let rho_red = params[2];
+            let rho_black = params[3];
+            let q0 = params[4];
+            let num_ants = 10;
+            let max_iterations = params[5] as usize;
+            let candidate_list_size = params[6] as usize;
+
+            Box::new(RedBlackACS::new_with_seed(
+                tsp,
+                alpha,
+                beta,
+                rho_red,
+                rho_black,
+                q0,
+                num_ants,
+                max_iterations,
+                candidate_list_size,
+                seed,
+            ))
+        }
+
+        Solver::RedBlackAntColonySystem2Opt => {
+            let alpha = params[0];
+            let beta = params[1];
+            let rho_red = params[2];
+            let rho_black = params[3];
+            let q0 = params[4];
+            let num_ants = 10;
+            let max_iterations = params[5] as usize;
+            let candidate_list_size = params[6] as usize;
+
+            Box::new(RBACS2Opt::with_options_and_seed(
+                tsp,
+                alpha,
+                beta,
+                rho_red,
+                rho_black,
+                q0,
+                num_ants,
+                max_iterations,
+                candidate_list_size,
+                seed,
+            ))
+        }
+
+        Solver::AntSystem => {
+            let alpha = params[0];
+            let beta = params[1];
+            let rho = params[2];
+            let max_iterations = params[4] as usize;
+            let num_ants = 20;
+            Box::new(AntSystem::with_options_and_seed(
+                tsp,
+                alpha,
+                beta,
+                rho,
+                num_ants,
+                max_iterations,
+                seed,
+            ))
+        }
+        _ => unimplemented!(),
+    }
+}
+
+fn benchmark(solvers: &[Solver], params: &[Vec<f64>], config: &BenchmarkConfig) {
+    let instances = instances_for_profile(config.profile);
+    let csv_file = Arc::new(Mutex::new(create_csv_file(&config.csv_path)));
 
     // Write CSV header
     {
         let mut file = csv_file.lock().unwrap();
         writeln!(
             file,
-            "Instance,Algorithm,Time_ms,Length,Optimum,Gap,Solution"
+            "Instance,Algorithm,Support,Seed,Time_ms,Length,Optimum,Gap,Solution"
         )
         .expect("Unable to write to file");
-        println!("instance,algorithm,time_ms,length,optimum,gap,solution");
+        println!("instance,algorithm,support,seed,time_ms,length,optimum,gap,solution");
+        eprintln!(
+            "benchmark profile={:?} runs={} threads={} instances={} csv={}",
+            config.profile,
+            config.num_runs,
+            config.num_threads,
+            instances.len(),
+            config.csv_path
+        );
     }
 
-    // println!("Starting parallel benchmarks");
-    run_parallel_benchmarks(&instances, solvers, params, num_threads, csv_file.clone());
-
-    // println!("Benchmarking complete. Results saved to Parallel-TSP-Benchmark.csv");
+    run_parallel_benchmarks(&instances, solvers, params, config, csv_file.clone());
 }
 
 fn create_csv_file(filename: &str) -> std::fs::File {
@@ -368,9 +446,11 @@ fn create_csv_file(filename: &str) -> std::fs::File {
 #[allow(dead_code)]
 fn print_benchmark_result(result: &BenchmarkResult) {
     println!(
-        "{},{},{},{:.2},{:.2},{:.2},\"{}\"",
+        "{},{},{},{},{},{:.2},{:.2},{:.2},\"{}\"",
         result.instance_name,
         result.algorithm_name,
+        result.support_level,
+        result.seed,
         result.execution_time.as_millis(),
         result.total_cost,
         result.best_known,
@@ -390,16 +470,18 @@ fn save_results_to_csv(results: &[BenchmarkResult], filename: &str) {
 
     writeln!(
         file,
-        "Instance,Algorithm,Time (ms),Found Tour Length,Best Known Length,Gap (%),Solution"
+        "Instance,Algorithm,Support,Seed,Time (ms),Found Tour Length,Best Known Length,Gap (%),Solution"
     )
     .expect("Unable to write to file");
 
     for result in results {
         writeln!(
             file,
-            "{},{},{},{:.2},{:.2},{:.2},\"{}\"",
+            "{},{},{},{},{},{:.2},{:.2},{:.2},\"{}\"",
             result.instance_name,
             result.algorithm_name,
+            result.support_level,
+            result.seed,
             result.execution_time.as_millis(),
             result.total_cost,
             result.best_known,
@@ -416,7 +498,6 @@ fn save_results_to_csv(results: &[BenchmarkResult], filename: &str) {
 }
 
 fn main() {
-    // println!("Starting TSP benchmark program");
     let solvers = vec![
         Solver::NearestNeighbor,
         Solver::TwoOpt,
@@ -433,7 +514,7 @@ fn main() {
 
     let params = vec![
         vec![],                                      // NN
-        vec![],                                      // NN+2-OPT
+        vec![],                                      // 2-OPT
         vec![1000.0, 0.999, 0.0001, 1000.0, 100.0],  // SA
         vec![1000.0, 0.999, 0.0001, 1000.0, 100.0],  // SA-2OPT
         vec![100.0, 5.0, 0.7, 0.01, 500.0],          // GA
@@ -445,8 +526,7 @@ fn main() {
                                                      // vec![0.1, 2.0, 0.1, 15.0, 1000.0], // AS
     ];
 
-    let num_threads = 108;
-    // println!("Configured {} solvers with {} threads", solvers.len(), num_threads);
-    benchmark(&solvers, &params, num_threads);
+    let config = BenchmarkConfig::from_env();
+    benchmark(&solvers, &params, &config);
     eprintln!("Benchmark program completed");
 }

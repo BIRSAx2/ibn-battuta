@@ -2,8 +2,10 @@ use crate::algorithms::{Solution, TspSolver};
 use crate::parser::Tsp;
 use crate::NearestNeighbor;
 use rand::prelude::*;
+use rand::rngs::StdRng;
 use std::cmp::Ordering;
 use std::f64;
+use std::mem;
 
 // Represents the Ant Colony System (ACS) algorithm for solving the Traveling Salesman Problem (TSP).
 ///
@@ -37,7 +39,8 @@ use std::f64;
 pub struct AntColonySystem {
     tsp: Tsp,
     pheromones: Vec<Vec<f64>>,
-    heuristic: Vec<Vec<f64>>,
+    pheromone_scores: Vec<Vec<f64>>,
+    heuristic_scores: Vec<Vec<f64>>,
     best_tour: Vec<usize>,
     best_cost: f64,
     candidate_lists: Vec<Vec<usize>>,
@@ -51,6 +54,8 @@ pub struct AntColonySystem {
     num_ants: usize,
     max_iterations: usize,
     candidate_list_size: usize,
+    rng: StdRng,
+    seed: u64,
 }
 
 impl AntColonySystem {
@@ -100,18 +105,45 @@ impl AntColonySystem {
         max_iterations: usize,
         candidate_list_size: usize,
     ) -> AntColonySystem {
+        Self::with_options_and_seed(
+            tsp,
+            alpha,
+            beta,
+            rho,
+            q0,
+            num_ants,
+            max_iterations,
+            candidate_list_size,
+            rand::random(),
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn with_options_and_seed(
+        tsp: Tsp,
+        alpha: f64,
+        beta: f64,
+        rho: f64,
+        q0: f64,
+        num_ants: usize,
+        max_iterations: usize,
+        candidate_list_size: usize,
+        seed: u64,
+    ) -> AntColonySystem {
         let mut nn = NearestNeighbor::new(tsp.clone());
         let base_tour = nn.solve().length;
         let n = tsp.dim();
         let tau0 = 1.0 / (n as f64 * base_tour);
 
         let pheromones = vec![vec![tau0; n]; n];
-        let heuristic = vec![vec![0.0; n]; n];
+        let pheromone_scores = vec![vec![tau0.powf(alpha); n]; n];
+        let heuristic_scores = vec![vec![0.0; n]; n];
 
         let mut acs = AntColonySystem {
             tsp,
             pheromones,
-            heuristic,
+            pheromone_scores,
+            heuristic_scores,
             best_tour: vec![],
             best_cost: f64::INFINITY,
             candidate_lists: vec![],
@@ -124,11 +156,17 @@ impl AntColonySystem {
             num_ants,
             max_iterations,
             candidate_list_size,
+            rng: StdRng::seed_from_u64(seed),
+            seed,
         };
 
         acs.initialize_heuristic();
         acs.initialize_candidate_lists();
         acs
+    }
+
+    pub fn seed(&self) -> u64 {
+        self.seed
     }
 
     fn calculate_tour_cost(&self, tour: &[usize]) -> f64 {
@@ -145,7 +183,7 @@ impl AntColonySystem {
         for i in 0..self.tsp.dim() {
             for j in 0..self.tsp.dim() {
                 if i != j {
-                    self.heuristic[i][j] = 1.0 / self.tsp.weight(i, j);
+                    self.heuristic_scores[i][j] = (1.0 / self.tsp.weight(i, j)).powf(self.beta);
                 }
             }
         }
@@ -171,15 +209,14 @@ impl AntColonySystem {
     }
 
     fn construct_solution(&mut self) -> Vec<usize> {
-        let mut rng = rand::thread_rng();
         let mut tour = vec![0; self.tsp.dim()];
         let mut visited = vec![false; self.tsp.dim()];
 
-        tour[0] = rng.gen_range(0..self.tsp.dim());
+        tour[0] = self.rng.gen_range(0..self.tsp.dim());
         visited[tour[0]] = true;
 
         for i in 1..self.tsp.dim() {
-            tour[i] = self.select_next_city(&tour[0..i], &visited, &mut rng);
+            tour[i] = self.select_next_city(&tour[0..i], &visited);
             visited[tour[i]] = true;
             self.local_pheromone_update(&tour[i - 1..=i]);
         }
@@ -190,20 +227,15 @@ impl AntColonySystem {
         tour
     }
 
-    fn select_next_city(
-        &self,
-        partial_tour: &[usize],
-        visited: &[bool],
-        rng: &mut ThreadRng,
-    ) -> usize {
+    fn select_next_city(&mut self, partial_tour: &[usize], visited: &[bool]) -> usize {
         let current_city = partial_tour[partial_tour.len() - 1];
 
-        if rng.gen::<f64>() < self.q0 {
+        if self.rng.gen::<f64>() < self.q0 {
             // Exploitation (choose best)
             self.select_best_city(current_city, visited)
         } else {
             // Exploration (probabilistic choice)
-            self.select_probabilistic_city(current_city, visited, rng)
+            self.select_probabilistic_city(current_city, visited)
         }
     }
 
@@ -212,10 +244,10 @@ impl AntColonySystem {
             .iter()
             .filter(|&&city| !visited[city])
             .max_by(|&&a, &&b| {
-                let score_a = self.pheromones[current_city][a]
-                    * self.heuristic[current_city][a].powf(self.beta);
-                let score_b = self.pheromones[current_city][b]
-                    * self.heuristic[current_city][b].powf(self.beta);
+                let score_a =
+                    self.pheromone_scores[current_city][a] * self.heuristic_scores[current_city][a];
+                let score_b =
+                    self.pheromone_scores[current_city][b] * self.heuristic_scores[current_city][b];
                 score_a.partial_cmp(&score_b).unwrap()
             })
             .cloned()
@@ -224,53 +256,55 @@ impl AntColonySystem {
                 (0..self.tsp.dim())
                     .filter(|&city| !visited[city])
                     .max_by(|&a, &b| {
-                        let score_a = self.pheromones[current_city][a]
-                            * self.heuristic[current_city][a].powf(self.beta);
-                        let score_b = self.pheromones[current_city][b]
-                            * self.heuristic[current_city][b].powf(self.beta);
+                        let score_a = self.pheromone_scores[current_city][a]
+                            * self.heuristic_scores[current_city][a];
+                        let score_b = self.pheromone_scores[current_city][b]
+                            * self.heuristic_scores[current_city][b];
                         score_a.partial_cmp(&score_b).unwrap()
                     })
                     .unwrap()
             })
     }
 
-    fn select_probabilistic_city(
-        &self,
-        current_city: usize,
-        visited: &[bool],
-        rng: &mut ThreadRng,
-    ) -> usize {
-        let mut probabilities = vec![0.0; self.tsp.dim()];
+    fn select_probabilistic_city(&mut self, current_city: usize, visited: &[bool]) -> usize {
         let mut total = 0.0;
 
         for &city in &self.candidate_lists[current_city] {
             if !visited[city] {
-                let probability = self.pheromones[current_city][city]
-                    * self.heuristic[current_city][city].powf(self.beta);
-                probabilities[city] = probability;
-                total += probability;
+                total += self.pheromone_scores[current_city][city]
+                    * self.heuristic_scores[current_city][city];
             }
         }
 
         if total == 0.0 {
             // If all candidates are visited, consider all unvisited cities
-            for city in 0..self.tsp.dim() {
-                if !visited[city] {
-                    let probability = self.pheromones[current_city][city]
-                        * self.heuristic[current_city][city].powf(self.beta);
-                    probabilities[city] = probability;
-                    total += probability;
+            for (city, &is_visited) in visited.iter().enumerate() {
+                if !is_visited {
+                    total += self.pheromone_scores[current_city][city]
+                        * self.heuristic_scores[current_city][city];
                 }
             }
-        }
 
-        let random_value = rng.gen::<f64>() * total;
-        let mut cumulative = 0.0;
-
-        for (city, &probability) in probabilities.iter().enumerate() {
-            cumulative += probability;
-            if cumulative >= random_value {
-                return city;
+            let mut random_value = self.rng.gen::<f64>() * total;
+            for (city, &is_visited) in visited.iter().enumerate() {
+                if !is_visited {
+                    random_value -= self.pheromone_scores[current_city][city]
+                        * self.heuristic_scores[current_city][city];
+                    if random_value <= 0.0 {
+                        return city;
+                    }
+                }
+            }
+        } else {
+            let mut random_value = self.rng.gen::<f64>() * total;
+            for &city in &self.candidate_lists[current_city] {
+                if !visited[city] {
+                    random_value -= self.pheromone_scores[current_city][city]
+                        * self.heuristic_scores[current_city][city];
+                    if random_value <= 0.0 {
+                        return city;
+                    }
+                }
             }
         }
 
@@ -282,6 +316,8 @@ impl AntColonySystem {
         let (i, j) = (edge[0], edge[1]);
         self.pheromones[i][j] = (1.0 - self.rho) * self.pheromones[i][j] + self.rho * self.tau0;
         self.pheromones[j][i] = self.pheromones[i][j];
+        self.pheromone_scores[i][j] = self.pheromones[i][j].powf(self.alpha);
+        self.pheromone_scores[j][i] = self.pheromone_scores[i][j];
     }
 
     fn global_pheromone_update(&mut self) {
@@ -301,13 +337,15 @@ impl AntColonySystem {
 
             self.pheromones[from][to] += self.alpha * deposit;
             self.pheromones[to][from] = self.pheromones[from][to];
+            self.pheromone_scores[from][to] = self.pheromones[from][to].powf(self.alpha);
+            self.pheromone_scores[to][from] = self.pheromone_scores[from][to];
         }
     }
 
-    fn update_best_solution(&mut self, tour: &[usize]) {
+    fn update_best_solution(&mut self, tour: &mut Vec<usize>) {
         let cost = self.calculate_tour_cost(tour);
         if cost < self.best_cost {
-            self.best_tour = tour.to_vec();
+            mem::swap(&mut self.best_tour, tour);
             self.best_cost = cost;
         }
     }
@@ -317,8 +355,8 @@ impl TspSolver for AntColonySystem {
     fn solve(&mut self) -> Solution {
         for _ in 0..self.max_iterations {
             for _ in 0..self.num_ants {
-                let solution = self.construct_solution();
-                self.update_best_solution(&solution);
+                let mut solution = self.construct_solution();
+                self.update_best_solution(&mut solution);
             }
             self.global_pheromone_update();
         }
@@ -435,5 +473,30 @@ mod tests {
         let pheromone_before = solver.pheromones[0][1];
         solver.global_pheromone_update();
         assert!(solver.pheromones[0][1] != pheromone_before);
+    }
+
+    #[test]
+    fn uses_seeded_runs_deterministically() {
+        let data = "
+        NAME : example
+        TYPE : TSP
+        DIMENSION : 5
+        EDGE_WEIGHT_TYPE: EUC_2D
+        NODE_COORD_SECTION
+          1 1.2 3.4
+          2 5.6 7.8
+          3 3.4 5.6
+          4 9.0 1.2
+          5 6.0 2.2
+        EOF
+        ";
+        let tsp = TspBuilder::parse_str(data).unwrap();
+        let mut lhs =
+            AntColonySystem::with_options_and_seed(tsp.clone(), 0.1, 2.0, 0.1, 0.9, 5, 100, 3, 11);
+        let mut rhs =
+            AntColonySystem::with_options_and_seed(tsp, 0.1, 2.0, 0.1, 0.9, 5, 100, 3, 11);
+
+        assert_eq!(lhs.seed(), 11);
+        assert_eq!(lhs.solve(), rhs.solve());
     }
 }

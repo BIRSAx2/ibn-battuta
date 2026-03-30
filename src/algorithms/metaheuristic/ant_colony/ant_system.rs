@@ -1,19 +1,23 @@
 use crate::algorithms::{Solution, TspSolver};
 use crate::parser::Tsp;
 use rand::prelude::*;
+use rand::rngs::StdRng;
 use std::f64;
 
 /// This module implements the Ant System (AS) algorithm for solving the Traveling Salesman Problem (TSP).
 pub struct AntSystem {
     tsp: Tsp,
     pheromones: Vec<Vec<f64>>,
+    pheromone_scores: Vec<Vec<f64>>,
+    heuristic_scores: Vec<Vec<f64>>,
     best_tour: Vec<usize>,
     best_cost: f64,
     alpha: f64,
-    beta: f64,
     rho: f64,
     num_ants: usize,
     max_iterations: usize,
+    rng: StdRng,
+    seed: u64,
 }
 
 impl AntSystem {
@@ -39,21 +43,57 @@ impl AntSystem {
         num_ants: usize,
         max_iterations: usize,
     ) -> AntSystem {
-        let dim = tsp.dim();
-        let initial_pheromone = 1.0 / (dim as f64);
-        let pheromones = vec![vec![initial_pheromone; dim]; dim];
-
-        AntSystem {
+        Self::with_options_and_seed(
             tsp,
-            pheromones,
-            best_tour: vec![],
-            best_cost: f64::INFINITY,
             alpha,
             beta,
             rho,
             num_ants,
             max_iterations,
+            rand::random(),
+        )
+    }
+
+    pub fn with_options_and_seed(
+        tsp: Tsp,
+        alpha: f64,
+        beta: f64,
+        rho: f64,
+        num_ants: usize,
+        max_iterations: usize,
+        seed: u64,
+    ) -> AntSystem {
+        let dim = tsp.dim();
+        let initial_pheromone = 1.0 / (dim as f64);
+        let pheromones = vec![vec![initial_pheromone; dim]; dim];
+        let pheromone_scores = vec![vec![initial_pheromone.powf(alpha); dim]; dim];
+        let mut heuristic_scores = vec![vec![0.0; dim]; dim];
+        for (i, row) in heuristic_scores.iter_mut().enumerate() {
+            for (j, value) in row.iter_mut().enumerate() {
+                if i != j {
+                    *value = (1.0 / tsp.weight(i, j)).powf(beta);
+                }
+            }
         }
+
+        AntSystem {
+            tsp,
+            pheromones,
+            pheromone_scores,
+            heuristic_scores,
+            best_tour: vec![],
+            best_cost: f64::INFINITY,
+            alpha,
+            rho,
+            num_ants,
+            max_iterations,
+            rng: StdRng::seed_from_u64(seed),
+            seed,
+        }
+    }
+
+    pub fn seed(&self) -> u64 {
+        self.seed
     }
 
     /// Calculates the total cost of a given tour.
@@ -80,16 +120,15 @@ impl AntSystem {
     /// # Returns
     ///
     /// A vector of node indices representing the constructed tour.
-    fn construct_solution(&self) -> Vec<usize> {
-        let mut rng = rand::thread_rng();
+    fn construct_solution(&mut self) -> Vec<usize> {
         let mut tour = vec![0; self.tsp.dim()];
         let mut visited = vec![false; self.tsp.dim()];
 
-        tour[0] = rng.gen_range(0..self.tsp.dim());
+        tour[0] = self.rng.gen_range(0..self.tsp.dim());
         visited[tour[0]] = true;
 
         for i in 1..self.tsp.dim() {
-            tour[i] = self.select_next_city(&tour[0..i], &visited, &mut rng);
+            tour[i] = self.select_next_city(&tour[0..i], &visited);
             visited[tour[i]] = true;
         }
 
@@ -107,33 +146,26 @@ impl AntSystem {
     /// # Returns
     ///
     /// The index of the next city to visit.
-    fn select_next_city(
-        &self,
-        partial_tour: &[usize],
-        visited: &[bool],
-        rng: &mut ThreadRng,
-    ) -> usize {
+    fn select_next_city(&mut self, partial_tour: &[usize], visited: &[bool]) -> usize {
         let current_city = partial_tour[partial_tour.len() - 1];
-        let mut probabilities = vec![0.0; self.tsp.dim()];
         let mut total = 0.0;
 
         for (city, &visited) in visited.iter().enumerate() {
             if !visited {
-                let pheromone = self.pheromones[current_city][city];
-                let distance = 1.0 / self.tsp.weight(current_city, city);
-                let probability = pheromone.powf(self.alpha) * distance.powf(self.beta);
-                probabilities[city] = probability;
-                total += probability;
+                total += self.pheromone_scores[current_city][city]
+                    * self.heuristic_scores[current_city][city];
             }
         }
 
-        let random_value = rng.gen::<f64>() * total;
-        let mut cumulative = 0.0;
+        let mut random_value = self.rng.gen::<f64>() * total;
 
-        for (city, &probability) in probabilities.iter().enumerate() {
-            cumulative += probability;
-            if cumulative >= random_value {
-                return city;
+        for (city, &visited) in visited.iter().enumerate() {
+            if !visited {
+                random_value -= self.pheromone_scores[current_city][city]
+                    * self.heuristic_scores[current_city][city];
+                if random_value <= 0.0 {
+                    return city;
+                }
             }
         }
 
@@ -152,6 +184,13 @@ impl AntSystem {
                 *pheromone *= 1.0 - self.rho;
             }
         }
+        for (score_row, pheromone_row) in
+            self.pheromone_scores.iter_mut().zip(self.pheromones.iter())
+        {
+            for (score, pheromone) in score_row.iter_mut().zip(pheromone_row.iter()) {
+                *score = pheromone.powf(self.alpha);
+            }
+        }
 
         // Deposit
         for solution in solutions {
@@ -163,6 +202,8 @@ impl AntSystem {
                 let to = solution[(i + 1) % solution.len()];
                 self.pheromones[from][to] += deposit;
                 self.pheromones[to][from] += deposit;
+                self.pheromone_scores[from][to] = self.pheromones[from][to].powf(self.alpha);
+                self.pheromone_scores[to][from] = self.pheromone_scores[from][to];
             }
         }
     }
@@ -330,5 +371,28 @@ mod tests {
 
         assert_eq!(solution.tour.len(), 3);
         assert!((solution.length - 17.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn uses_seeded_runs_deterministically() {
+        let data = "
+		NAME : simple
+		TYPE : TSP
+		DIMENSION : 4
+		EDGE_WEIGHT_TYPE: EUC_2D
+		NODE_COORD_SECTION
+		  1 0.0 0.0
+		  2 0.0 1.0
+		  3 1.0 1.0
+		  4 1.0 0.0
+		EOF
+		";
+
+        let tsp = TspBuilder::parse_str(data).unwrap();
+        let mut lhs = AntSystem::with_options_and_seed(tsp.clone(), 0.1, 2.0, 0.1, 10, 200, 5);
+        let mut rhs = AntSystem::with_options_and_seed(tsp, 0.1, 2.0, 0.1, 10, 200, 5);
+
+        assert_eq!(lhs.seed(), 5);
+        assert_eq!(lhs.solve(), rhs.solve());
     }
 }

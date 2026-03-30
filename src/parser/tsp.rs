@@ -196,11 +196,19 @@ pub struct Tsp {
 
 impl Tsp {
     /// Returns the node data for a zero-based node id.
+    ///
+    /// This is the checked counterpart to accessing node coordinate storage directly.
     pub fn node(&self, id: usize) -> Option<&Point> {
         self.node_coords.get(&id)
     }
 
     /// Returns the edge weight between two nodes if both nodes can be resolved.
+    ///
+    /// This method is non-panicking. It returns `None` when:
+    /// - a node id is out of range,
+    /// - an explicit-weight matrix is incomplete for the requested entry, or
+    /// - the dataset declares `EDGE_WEIGHT_FORMAT: FUNCTION` / an undefined weight format, which
+    ///   this crate does not evaluate dynamically.
     pub fn try_weight(&self, a: usize, b: usize) -> Option<f64> {
         match self.weight_kind {
             WeightKind::Explicit => match self.weight_format {
@@ -268,6 +276,11 @@ impl Tsp {
     /// # Arguments
     /// * a - index of the first node.
     /// * b - index of the second node.
+    ///
+    /// # Panics
+    ///
+    /// Panics when the requested node or explicit-weight entry is not available.
+    /// Prefer [`Tsp::try_weight`] for checked access in production call sites.
     pub fn weight(&self, a: usize, b: usize) -> f64 {
         self.try_weight(a, b)
             .unwrap_or_else(|| panic!("Node or edge not found: a={a}, b={b}"))
@@ -329,6 +342,9 @@ impl TspBuilder {
     ///
     /// If all entries in the input string are valid, a [`Tsp`] object will be returned. Otherwise,
     /// an error [`ParseTspError`] is returned, containing hints why the parsing fails.
+    ///
+    /// This function is intended to fail with structured errors rather than panic on malformed
+    /// TSPLIB input.
     // Should be in TryFrom once issue 50133 is fixed.
     // See: https://github.com/rust-lang/rust/issues/50133.
     pub fn parse_str<S>(s: S) -> Result<Tsp, ParseTspError>
@@ -347,6 +363,8 @@ impl TspBuilder {
     ///
     /// If all entries in the input file are valid, a [`Tsp`] object will be returned. Otherwise,
     /// an error [`ParseTspError`] is returned, containing hints why the parsing fails.
+    ///
+    /// Unsupported TSPLIB features are reported with [`ParseTspError::UnsupportedFeature`].
     // Should be in TryFrom once issue 50133 is fixed.
     // See: https://github.com/rust-lang/rust/issues/50133.
     pub fn parse_path<P>(path: P) -> Result<Tsp, ParseTspError>

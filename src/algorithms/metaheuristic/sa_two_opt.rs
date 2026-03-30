@@ -67,7 +67,11 @@ impl SA2Opt {
     /// let solver = SA2Opt::new(tsp);
     /// ```
     pub fn new(tsp: Tsp) -> SA2Opt {
-        let sa = SimulatedAnnealing::new(tsp.clone());
+        Self::new_with_seed(tsp, rand::random())
+    }
+
+    pub fn new_with_seed(tsp: Tsp, seed: u64) -> SA2Opt {
+        let sa = SimulatedAnnealing::with_seed(tsp.clone(), seed);
 
         SA2Opt {
             tsp,
@@ -75,6 +79,10 @@ impl SA2Opt {
             base_solution: Solution::default(),
             last_solution: Solution::default(),
         }
+    }
+
+    pub fn seed(&self) -> u64 {
+        self.sa.seed()
     }
 
     pub fn base_solution(&self) -> Solution {
@@ -176,5 +184,29 @@ mod tests {
             visited[city] = true;
         }
         assert!(visited.iter().all(|&v| v), "All cities should be visited");
+    }
+
+    #[test]
+    fn uses_seeded_runs_deterministically() {
+        let tsp_data = "
+        NAME : custom_small
+        TYPE : TSP
+        DIMENSION : 6
+        EDGE_WEIGHT_TYPE : EUC_2D
+        NODE_COORD_SECTION
+        1 0 0
+        2 1 0
+        3 2 0
+        4 2 1
+        5 1 1
+        6 0 1
+        EOF
+        ";
+        let tsp = TspBuilder::parse_str(tsp_data).unwrap();
+        let mut lhs = SA2Opt::new_with_seed(tsp.clone(), 9);
+        let mut rhs = SA2Opt::new_with_seed(tsp, 9);
+
+        assert_eq!(lhs.seed(), 9);
+        assert_eq!(lhs.solve(), rhs.solve());
     }
 }

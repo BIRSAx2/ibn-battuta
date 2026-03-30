@@ -37,16 +37,41 @@ impl GA2Opt {
         mutation_rate: f64,
         max_generations: usize,
     ) -> GA2Opt {
-        let acs = GeneticAlgorithm::with_options(
+        Self::with_options_and_seed(
+            tsp,
+            population_size,
+            elite_size,
+            crossover_rate,
+            mutation_rate,
+            max_generations,
+            rand::random(),
+        )
+    }
+
+    pub fn with_options_and_seed(
+        tsp: Tsp,
+        population_size: usize,
+        elite_size: usize,
+        crossover_rate: f64,
+        mutation_rate: f64,
+        max_generations: usize,
+        seed: u64,
+    ) -> GA2Opt {
+        let acs = GeneticAlgorithm::with_options_and_seed(
             tsp.clone(),
             population_size,
             elite_size,
             crossover_rate,
             mutation_rate,
             max_generations,
+            seed,
         );
 
         GA2Opt { tsp, ga: acs }
+    }
+
+    pub fn seed(&self) -> u64 {
+        self.ga.seed()
     }
 }
 
@@ -188,5 +213,16 @@ mod tests {
             "GA2Opt",
             "Solver name should be GA2Opt"
         );
+    }
+
+    #[test]
+    fn uses_seeded_runs_deterministically() {
+        let path = "data/tsplib/gr17.tsp";
+        let tsp = TspBuilder::parse_path(path).unwrap();
+        let mut lhs = GA2Opt::with_options_and_seed(tsp.clone(), 100, 5, 0.7, 0.01, 500, 13);
+        let mut rhs = GA2Opt::with_options_and_seed(tsp, 100, 5, 0.7, 0.01, 500, 13);
+
+        assert_eq!(lhs.seed(), 13);
+        assert_eq!(lhs.solve(), rhs.solve());
     }
 }

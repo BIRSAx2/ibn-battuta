@@ -6,6 +6,7 @@
 use crate::algorithms::{Solution, TspSolver};
 use crate::parser::Tsp;
 use rand::prelude::*;
+use rand::rngs::StdRng;
 use std::f64;
 
 /// Represents a Simulated Annealing solver for the Traveling Salesman Problem.
@@ -19,6 +20,8 @@ pub struct SimulatedAnnealing {
     rate: f64,
     iter_x: Vec<usize>,
     iter_y: Vec<f64>,
+    rng: StdRng,
+    seed: u64,
 }
 
 impl SimulatedAnnealing {
@@ -56,6 +59,11 @@ impl SimulatedAnnealing {
     /// let sa = SimulatedAnnealing::new(tsp);
     /// ```
     pub fn new(tsp: Tsp) -> Self {
+        Self::with_seed(tsp, rand::random())
+    }
+
+    /// Creates a new SimulatedAnnealing instance with a deterministic seed.
+    pub fn with_seed(tsp: Tsp, seed: u64) -> Self {
         let num_city = tsp.dim();
         let mut sa = SimulatedAnnealing {
             tsp: tsp.clone(),
@@ -67,6 +75,8 @@ impl SimulatedAnnealing {
             rate: 0.9995,
             iter_x: vec![0],
             iter_y: vec![0.0],
+            rng: StdRng::seed_from_u64(seed),
+            seed,
         };
 
         let fire = sa.greedy_init(&tsp, 100, num_city);
@@ -76,6 +86,10 @@ impl SimulatedAnnealing {
         sa.best_length = init_pathlen;
         sa.iter_y[0] = init_pathlen;
         sa
+    }
+
+    pub fn seed(&self) -> u64 {
+        self.seed
     }
 
     /// Initializes the solution using a greedy approach.
@@ -89,8 +103,7 @@ impl SimulatedAnnealing {
     /// # Returns
     ///
     /// A vector representing the initial solution.
-    fn greedy_init(&self, tsp: &Tsp, num_total: usize, num_city: usize) -> Vec<usize> {
-        let mut rng = rand::thread_rng();
+    fn greedy_init(&mut self, tsp: &Tsp, num_total: usize, num_city: usize) -> Vec<usize> {
         let mut result = Vec::new();
 
         for _ in 0..num_total {
@@ -98,7 +111,7 @@ impl SimulatedAnnealing {
             let mut current = if result.len() < num_city {
                 result.len()
             } else {
-                rng.gen_range(0..num_city)
+                self.rng.gen_range(0..num_city)
             };
 
             let mut result_one = vec![current];
@@ -156,12 +169,11 @@ impl SimulatedAnnealing {
     /// # Returns
     ///
     /// A new solution vector.
-    fn get_new_fire(&self) -> Vec<usize> {
-        let mut rng = rand::thread_rng();
+    fn get_new_fire(&mut self) -> Vec<usize> {
         let mut new_fire = self.fire.clone();
         let (a, b) = (
-            rng.gen_range(0..new_fire.len()),
-            rng.gen_range(0..new_fire.len()),
+            self.rng.gen_range(0..new_fire.len()),
+            self.rng.gen_range(0..new_fire.len()),
         );
         new_fire[a.min(b)..=a.max(b)].reverse();
         new_fire
@@ -178,16 +190,15 @@ impl SimulatedAnnealing {
     /// # Returns
     ///
     /// A tuple containing the accepted solution and its length.
-    fn eval_fire(&self, raw: &[usize], get: &[usize], temp: f64) -> (Vec<usize>, f64) {
-        let len1 = self.compute_pathlen(raw, &self.tsp);
+    fn eval_fire(&mut self, get: &[usize], temp: f64) -> (Vec<usize>, f64) {
         let len2 = self.compute_pathlen(get, &self.tsp);
-        let dc = len2 - len1;
+        let dc = len2 - self.best_length;
         let p = f64::max(1e-1, f64::exp(-dc / temp));
 
-        if len2 < len1 || rand::random::<f64>() <= p {
+        if len2 < self.best_length || self.rng.gen::<f64>() <= p {
             (get.to_vec(), len2)
         } else {
-            (raw.to_vec(), len1)
+            (self.best_path.clone(), self.best_length)
         }
     }
 
@@ -203,13 +214,13 @@ impl SimulatedAnnealing {
         while t > self.tend {
             count += 1;
             let tmp_new = self.get_new_fire();
-            let (new_fire, file_len) = self.eval_fire(&self.best_path, &tmp_new, t);
+            let (new_fire, file_len) = self.eval_fire(&tmp_new, t);
 
             self.fire = new_fire;
 
             if file_len < self.best_length {
-                self.best_length = file_len;
                 self.best_path = self.fire.clone();
+                self.best_length = file_len;
             }
 
             t *= self.rate;
@@ -335,7 +346,7 @@ mod tests {
         EOF
         ";
         let tsp = TspBuilder::parse_str(data).unwrap();
-        let sa = SimulatedAnnealing::new(tsp.clone());
+        let mut sa = SimulatedAnnealing::new(tsp.clone());
         let init_path = sa.greedy_init(&tsp, 10, 5);
 
         assert_eq!(init_path.len(), 5);
@@ -363,5 +374,28 @@ mod tests {
 
         let new_fire = sa.get_new_fire();
         assert_eq!(new_fire.len(), 5);
+    }
+
+    #[test]
+    fn uses_seeded_runs_deterministically() {
+        let data = "
+        NAME : example
+        TYPE : TSP
+        DIMENSION : 5
+        EDGE_WEIGHT_TYPE: EUC_2D
+        NODE_COORD_SECTION
+          1 1.0 1.0
+          2 2.0 2.0
+          3 3.0 3.0
+          4 4.0 4.0
+          5 5.0 5.0
+        EOF
+        ";
+        let tsp = TspBuilder::parse_str(data).unwrap();
+        let mut lhs = SimulatedAnnealing::with_seed(tsp.clone(), 42);
+        let mut rhs = SimulatedAnnealing::with_seed(tsp, 42);
+
+        assert_eq!(lhs.seed(), 42);
+        assert_eq!(lhs.solve(), rhs.solve());
     }
 }

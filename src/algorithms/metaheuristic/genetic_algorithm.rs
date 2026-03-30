@@ -1,6 +1,7 @@
 use crate::algorithms::{Solution, TspSolver};
 use crate::parser::Tsp;
 use rand::prelude::*;
+use rand::rngs::StdRng;
 use std::cmp::Ordering;
 use std::f64;
 
@@ -42,6 +43,8 @@ pub struct GeneticAlgorithm {
     crossover_rate: f64,
     mutation_rate: f64,
     max_generations: usize,
+    rng: StdRng,
+    seed: u64,
 }
 
 impl GeneticAlgorithm {
@@ -83,6 +86,26 @@ impl GeneticAlgorithm {
         mutation_rate: f64,
         max_generations: usize,
     ) -> GeneticAlgorithm {
+        Self::with_options_and_seed(
+            tsp,
+            population_size,
+            elite_size,
+            crossover_rate,
+            mutation_rate,
+            max_generations,
+            rand::random(),
+        )
+    }
+
+    pub fn with_options_and_seed(
+        tsp: Tsp,
+        population_size: usize,
+        elite_size: usize,
+        crossover_rate: f64,
+        mutation_rate: f64,
+        max_generations: usize,
+        seed: u64,
+    ) -> GeneticAlgorithm {
         let population_size = population_size.max(2);
         let elite_size = elite_size.min(population_size / 2);
 
@@ -94,16 +117,22 @@ impl GeneticAlgorithm {
             crossover_rate,
             mutation_rate,
             max_generations,
+            rng: StdRng::seed_from_u64(seed),
+            seed,
         };
         ga.initialize_population();
         ga
     }
+
+    pub fn seed(&self) -> u64 {
+        self.seed
+    }
+
     /// Initializes the population with random tours and applies a greedy initialization.
     fn initialize_population(&mut self) {
-        let mut rng = rand::thread_rng();
         for _ in 0..self.population_size {
             let mut tour: Vec<usize> = (0..self.tsp.dim()).collect();
-            tour.shuffle(&mut rng);
+            tour.shuffle(&mut self.rng);
             self.population.push(tour);
         }
         self.greedy_init();
@@ -115,7 +144,7 @@ impl GeneticAlgorithm {
         while self.population.len() < self.population_size {
             let mut rest: Vec<usize> = (0..num_city).collect();
             if start_index >= num_city {
-                start_index = rand::thread_rng().gen_range(0..num_city);
+                start_index = self.rng.gen_range(0..num_city);
                 self.population.push(self.population[start_index].clone());
                 continue;
             }
@@ -166,20 +195,21 @@ impl GeneticAlgorithm {
             + self.cost(*tour.last().unwrap(), tour[0])
     }
 
-    fn select_parents(&self, fitnesses: &[f64]) -> Vec<usize> {
-        let mut rng = rand::thread_rng();
+    fn select_parents(&mut self, fitnesses: &[f64]) -> Vec<usize> {
         let total_fitness: f64 = fitnesses.iter().sum();
         let mut selected = Vec::with_capacity(self.population_size);
 
         for _ in 0..self.population_size {
-            let mut r = rng.gen::<f64>() * total_fitness;
+            let mut r = self.rng.gen::<f64>() * total_fitness;
+            let mut chosen = fitnesses.len().saturating_sub(1);
             for (i, &fitness) in fitnesses.iter().enumerate() {
                 r -= fitness;
                 if r <= 0.0 {
-                    selected.push(i);
+                    chosen = i;
                     break;
                 }
             }
+            selected.push(chosen);
         }
 
         selected
@@ -195,18 +225,22 @@ impl GeneticAlgorithm {
     /// # Returns
     ///
     /// A new tour resulting from the crossover of the two parent tours.
-    fn crossover(&self, parent1: &[usize], parent2: &[usize]) -> Vec<usize> {
-        let mut rng = rand::thread_rng();
+    fn crossover_with_rng(parent1: &[usize], parent2: &[usize], rng: &mut StdRng) -> Vec<usize> {
         let start = rng.gen_range(0..parent1.len());
         let end = rng.gen_range(start..parent1.len());
 
         let mut child = vec![0; parent1.len()];
+        let mut used = vec![false; parent1.len()];
         child[start..=end].copy_from_slice(&parent1[start..=end]);
+        for &city in &parent1[start..=end] {
+            used[city] = true;
+        }
 
         let mut j = (end + 1) % parent1.len();
         for &city in parent2.iter().chain(parent2.iter()) {
-            if !child[start..=end].contains(&city) {
+            if !used[city] {
                 child[j] = city;
+                used[city] = true;
                 j = (j + 1) % parent1.len();
                 if j == start {
                     break;
@@ -222,9 +256,8 @@ impl GeneticAlgorithm {
     /// # Arguments
     ///
     /// * `tour` - A mutable reference to the tour to be mutated.
-    fn mutate(&self, tour: &mut [usize]) {
-        let mut rng = rand::thread_rng();
-        if rng.gen::<f64>() < self.mutation_rate {
+    fn mutate_with_rng(tour: &mut [usize], mutation_rate: f64, rng: &mut StdRng) {
+        if rng.gen::<f64>() < mutation_rate {
             let i = rng.gen_range(0..tour.len());
             let j = rng.gen_range(0..tour.len());
             tour.swap(i, j);
@@ -256,16 +289,19 @@ impl GeneticAlgorithm {
         let parents = self.select_parents(&fitnesses);
 
         while next_generation.len() < self.population_size {
-            let parent1 = &self.population[parents[rand::thread_rng().gen_range(0..parents.len())]];
-            let parent2 = &self.population[parents[rand::thread_rng().gen_range(0..parents.len())]];
+            let parent1_idx = parents[self.rng.gen_range(0..parents.len())];
+            let parent2_idx = parents[self.rng.gen_range(0..parents.len())];
+            let should_crossover = self.rng.gen::<f64>() < self.crossover_rate;
+            let population = &self.population;
+            let rng = &mut self.rng;
 
-            let mut child = if rand::thread_rng().gen::<f64>() < self.crossover_rate {
-                self.crossover(parent1, parent2)
+            let mut child = if should_crossover {
+                Self::crossover_with_rng(&population[parent1_idx], &population[parent2_idx], rng)
             } else {
-                parent1.clone()
+                population[parent1_idx].clone()
             };
 
-            self.mutate(&mut child);
+            Self::mutate_with_rng(&mut child, self.mutation_rate, rng);
             next_generation.push(child);
         }
 
@@ -388,12 +424,12 @@ mod tests {
         EOF
         ";
         let tsp = TspBuilder::parse_str(data).unwrap();
-        let ga = GeneticAlgorithm::with_options(tsp, 10, 2, 0.7, 0.01, 100);
+        let mut ga = GeneticAlgorithm::with_options(tsp, 10, 2, 0.7, 0.01, 100);
 
         let parent1 = vec![0, 1, 2, 3, 4];
         let parent2 = vec![4, 3, 2, 1, 0];
 
-        let child = ga.crossover(&parent1, &parent2);
+        let child = GeneticAlgorithm::crossover_with_rng(&parent1, &parent2, &mut ga.rng);
 
         assert_eq!(child.len(), 5);
         assert!(child.iter().all(|&x| x < 5));
@@ -403,5 +439,27 @@ mod tests {
         );
     }
 
-    // TODO: Add more tests
+    #[test]
+    fn uses_seeded_runs_deterministically() {
+        let data = "
+        NAME : example
+        TYPE : TSP
+        DIMENSION : 5
+        EDGE_WEIGHT_TYPE: EUC_2D
+        NODE_COORD_SECTION
+          1 1.2 3.4
+          2 5.6 7.8
+          3 3.4 5.6
+          4 9.0 1.2
+          5 6.0 2.2
+        EOF
+        ";
+        let tsp = TspBuilder::parse_str(data).unwrap();
+        let mut lhs =
+            GeneticAlgorithm::with_options_and_seed(tsp.clone(), 50, 5, 0.7, 0.01, 100, 7);
+        let mut rhs = GeneticAlgorithm::with_options_and_seed(tsp, 50, 5, 0.7, 0.01, 100, 7);
+
+        assert_eq!(lhs.seed(), 7);
+        assert_eq!(lhs.solve(), rhs.solve());
+    }
 }

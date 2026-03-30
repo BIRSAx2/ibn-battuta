@@ -2,6 +2,7 @@ use crate::algorithms::TspSolver;
 use crate::parser::Tsp;
 use crate::{NearestNeighbor, Solution};
 use rand::prelude::*;
+use rand::rngs::StdRng;
 use std::{cmp::Ordering, f64, mem};
 
 /// Red-Black Ant Colony System (RB-ACS) solver for the Traveling Salesman Problem.
@@ -26,7 +27,9 @@ pub struct RedBlackACS {
     tsp: Tsp,
     pheromones_red: Vec<Vec<f64>>,
     pheromones_black: Vec<Vec<f64>>,
-    heuristic: Vec<Vec<f64>>,
+    pheromone_scores_red: Vec<Vec<f64>>,
+    pheromone_scores_black: Vec<Vec<f64>>,
+    heuristic_scores: Vec<Vec<f64>>,
     candidate_lists: Vec<Vec<usize>>,
     best_tour_red: Vec<usize>,
     best_tour_black: Vec<usize>,
@@ -41,6 +44,8 @@ pub struct RedBlackACS {
     num_ants: usize,
     max_iterations: usize,
     candidate_list_size: usize,
+    rng: StdRng,
+    seed: u64,
 }
 
 impl RedBlackACS {
@@ -78,10 +83,39 @@ impl RedBlackACS {
         max_iterations: usize,
         candidate_list_size: usize,
     ) -> RedBlackACS {
+        Self::new_with_seed(
+            tsp,
+            alpha,
+            beta,
+            rho_red,
+            rho_black,
+            q0,
+            num_ants,
+            max_iterations,
+            candidate_list_size,
+            rand::random(),
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn new_with_seed(
+        tsp: Tsp,
+        alpha: f64,
+        beta: f64,
+        rho_red: f64,
+        rho_black: f64,
+        q0: f64,
+        num_ants: usize,
+        max_iterations: usize,
+        candidate_list_size: usize,
+        seed: u64,
+    ) -> RedBlackACS {
         let dim = tsp.dim();
         let mut pheromones_red = vec![vec![0.0; dim]; dim];
         let mut pheromones_black = vec![vec![0.0; dim]; dim];
-        let heuristic = vec![vec![0.0; dim]; dim];
+        let mut pheromone_scores_red = vec![vec![0.0; dim]; dim];
+        let mut pheromone_scores_black = vec![vec![0.0; dim]; dim];
+        let heuristic_scores = vec![vec![0.0; dim]; dim];
 
         // Calculate tau0 based on nearest neighbor heuristic
         let nn_tour_length = NearestNeighbor::new(tsp.clone()).solve().length;
@@ -94,6 +128,8 @@ impl RedBlackACS {
                     let cost = tsp.weight(i, j);
                     pheromones_red[i][j] = 100.0 / cost;
                     pheromones_black[i][j] = 100.0 / cost;
+                    pheromone_scores_red[i][j] = pheromones_red[i][j].powf(alpha);
+                    pheromone_scores_black[i][j] = pheromones_black[i][j].powf(alpha);
                 }
             }
         }
@@ -102,7 +138,9 @@ impl RedBlackACS {
             tsp,
             pheromones_red,
             pheromones_black,
-            heuristic,
+            pheromone_scores_red,
+            pheromone_scores_black,
+            heuristic_scores,
             candidate_lists: vec![],
             best_tour_red: vec![],
             best_tour_black: vec![],
@@ -117,6 +155,8 @@ impl RedBlackACS {
             num_ants,
             max_iterations,
             candidate_list_size,
+            rng: StdRng::seed_from_u64(seed),
+            seed,
         };
 
         rb_acs.initialize_heuristic();
@@ -124,11 +164,15 @@ impl RedBlackACS {
         rb_acs
     }
 
+    pub fn seed(&self) -> u64 {
+        self.seed
+    }
+
     fn initialize_heuristic(&mut self) {
         for i in 0..self.tsp.dim() {
             for j in 0..self.tsp.dim() {
                 if i != j {
-                    self.heuristic[i][j] = 1.0 / self.tsp.weight(i, j);
+                    self.heuristic_scores[i][j] = (1.0 / self.tsp.weight(i, j)).powf(self.beta);
                 }
             }
         }
@@ -154,16 +198,15 @@ impl RedBlackACS {
     }
 
     fn construct_solution(&mut self, is_red: bool) -> Vec<usize> {
-        let mut rng = rand::thread_rng();
         let mut tour = vec![0; self.tsp.dim()];
         let mut visited = vec![false; self.tsp.dim()];
 
         // Randomly select starting city
-        tour[0] = rng.gen_range(0..self.tsp.dim());
+        tour[0] = self.rng.gen_range(0..self.tsp.dim());
         visited[tour[0]] = true;
 
         for i in 1..self.tsp.dim() {
-            tour[i] = self.select_next_city(&tour[0..i], &visited, &mut rng, is_red);
+            tour[i] = self.select_next_city(&tour[0..i], &visited, is_red);
             visited[tour[i]] = true;
             self.local_pheromone_update(&tour[i - 1..=i], is_red);
         }
@@ -175,23 +218,22 @@ impl RedBlackACS {
     }
 
     fn select_next_city(
-        &self,
+        &mut self,
         partial_tour: &[usize],
         visited: &[bool],
-        rng: &mut ThreadRng,
         is_red: bool,
     ) -> usize {
         let current_city = partial_tour[partial_tour.len() - 1];
-        let pheromones = if is_red {
-            &self.pheromones_red
-        } else {
-            &self.pheromones_black
-        };
 
-        if rng.gen::<f64>() < self.q0 {
-            self.select_best_city(current_city, visited, pheromones)
+        if self.rng.gen::<f64>() < self.q0 {
+            let pheromone_scores = if is_red {
+                &self.pheromone_scores_red
+            } else {
+                &self.pheromone_scores_black
+            };
+            self.select_best_city(current_city, visited, pheromone_scores)
         } else {
-            self.select_probabilistic_city(current_city, visited, rng, pheromones)
+            self.select_probabilistic_city(current_city, visited, is_red)
         }
     }
 
@@ -199,16 +241,16 @@ impl RedBlackACS {
         &self,
         current_city: usize,
         visited: &[bool],
-        pheromones: &[Vec<f64>],
+        pheromone_scores: &[Vec<f64>],
     ) -> usize {
         self.candidate_lists[current_city]
             .iter()
             .filter(|&&city| !visited[city])
             .max_by(|&&a, &&b| {
-                let score_a = pheromones[current_city][a].powf(self.alpha)
-                    * self.heuristic[current_city][a].powf(self.beta);
-                let score_b = pheromones[current_city][b].powf(self.alpha)
-                    * self.heuristic[current_city][b].powf(self.beta);
+                let score_a =
+                    pheromone_scores[current_city][a] * self.heuristic_scores[current_city][a];
+                let score_b =
+                    pheromone_scores[current_city][b] * self.heuristic_scores[current_city][b];
                 score_a.partial_cmp(&score_b).unwrap()
             })
             .cloned()
@@ -216,10 +258,10 @@ impl RedBlackACS {
                 (0..self.tsp.dim())
                     .filter(|&city| !visited[city])
                     .max_by(|&a, &b| {
-                        let score_a = pheromones[current_city][a].powf(self.alpha)
-                            * self.heuristic[current_city][a].powf(self.beta);
-                        let score_b = pheromones[current_city][b].powf(self.alpha)
-                            * self.heuristic[current_city][b].powf(self.beta);
+                        let score_a = pheromone_scores[current_city][a]
+                            * self.heuristic_scores[current_city][a];
+                        let score_b = pheromone_scores[current_city][b]
+                            * self.heuristic_scores[current_city][b];
                         score_a.partial_cmp(&score_b).unwrap()
                     })
                     .unwrap()
@@ -227,42 +269,53 @@ impl RedBlackACS {
     }
 
     fn select_probabilistic_city(
-        &self,
+        &mut self,
         current_city: usize,
         visited: &[bool],
-        rng: &mut ThreadRng,
-        pheromones: &[Vec<f64>],
+        is_red: bool,
     ) -> usize {
-        let mut probabilities = vec![0.0; self.tsp.dim()];
+        let pheromone_scores = if is_red {
+            &self.pheromone_scores_red
+        } else {
+            &self.pheromone_scores_black
+        };
         let mut total = 0.0;
 
         for &city in &self.candidate_lists[current_city] {
             if !visited[city] {
-                let probability = pheromones[current_city][city].powf(self.alpha)
-                    * self.heuristic[current_city][city].powf(self.beta);
-                probabilities[city] = probability;
-                total += probability;
+                total += pheromone_scores[current_city][city]
+                    * self.heuristic_scores[current_city][city];
             }
         }
 
         if total == 0.0 {
-            for city in 0..self.tsp.dim() {
-                if !visited[city] {
-                    let probability = pheromones[current_city][city].powf(self.alpha)
-                        * self.heuristic[current_city][city].powf(self.beta);
-                    probabilities[city] = probability;
-                    total += probability;
+            for (city, &is_visited) in visited.iter().enumerate() {
+                if !is_visited {
+                    total += pheromone_scores[current_city][city]
+                        * self.heuristic_scores[current_city][city];
                 }
             }
-        }
 
-        let random_value = rng.gen::<f64>() * total;
-        let mut cumulative = 0.0;
-
-        for (city, &probability) in probabilities.iter().enumerate() {
-            cumulative += probability;
-            if cumulative >= random_value {
-                return city;
+            let mut random_value = self.rng.gen::<f64>() * total;
+            for (city, &is_visited) in visited.iter().enumerate() {
+                if !is_visited {
+                    random_value -= pheromone_scores[current_city][city]
+                        * self.heuristic_scores[current_city][city];
+                    if random_value <= 0.0 {
+                        return city;
+                    }
+                }
+            }
+        } else {
+            let mut random_value = self.rng.gen::<f64>() * total;
+            for &city in &self.candidate_lists[current_city] {
+                if !visited[city] {
+                    random_value -= pheromone_scores[current_city][city]
+                        * self.heuristic_scores[current_city][city];
+                    if random_value <= 0.0 {
+                        return city;
+                    }
+                }
             }
         }
 
@@ -271,13 +324,23 @@ impl RedBlackACS {
 
     fn local_pheromone_update(&mut self, edge: &[usize], is_red: bool) {
         let (i, j) = (edge[0], edge[1]);
-        let (pheromones, rho) = if is_red {
-            (&mut self.pheromones_red, self.rho_red)
+        let (pheromones, pheromone_scores, rho) = if is_red {
+            (
+                &mut self.pheromones_red,
+                &mut self.pheromone_scores_red,
+                self.rho_red,
+            )
         } else {
-            (&mut self.pheromones_black, self.rho_black)
+            (
+                &mut self.pheromones_black,
+                &mut self.pheromone_scores_black,
+                self.rho_black,
+            )
         };
         pheromones[i][j] = (1.0 - rho) * pheromones[i][j] + rho * self.tau0;
         pheromones[j][i] = pheromones[i][j];
+        pheromone_scores[i][j] = pheromones[i][j].powf(self.alpha);
+        pheromone_scores[j][i] = pheromone_scores[i][j];
     }
 
     fn global_pheromone_update(&mut self) {
@@ -291,6 +354,8 @@ impl RedBlackACS {
             self.pheromones_red[from][to] =
                 (1.0 - self.rho_red) * self.pheromones_red[from][to] + self.rho_red * deposit_red;
             self.pheromones_red[to][from] = self.pheromones_red[from][to];
+            self.pheromone_scores_red[from][to] = self.pheromones_red[from][to].powf(self.alpha);
+            self.pheromone_scores_red[to][from] = self.pheromone_scores_red[from][to];
         }
 
         for i in 0..self.best_tour_black.len() {
@@ -300,6 +365,9 @@ impl RedBlackACS {
                 * self.pheromones_black[from][to]
                 + self.rho_black * deposit_black;
             self.pheromones_black[to][from] = self.pheromones_black[from][to];
+            self.pheromone_scores_black[from][to] =
+                self.pheromones_black[from][to].powf(self.alpha);
+            self.pheromone_scores_black[to][from] = self.pheromone_scores_black[from][to];
         }
     }
 
@@ -393,7 +461,7 @@ mod tests {
         assert_eq!(solver.tsp.dim(), 5);
         assert_eq!(solver.pheromones_red.len(), 5);
         assert_eq!(solver.pheromones_black.len(), 5);
-        assert_eq!(solver.heuristic.len(), 5);
+        assert_eq!(solver.heuristic_scores.len(), 5);
         assert_eq!(solver.candidate_lists.len(), 5);
 
         // Check that pheromones are initialized correctly
@@ -511,5 +579,16 @@ mod tests {
 
         assert_ne!(solver.pheromones_red[0][1], initial_red_pheromone);
         assert_ne!(solver.pheromones_black[0][2], initial_black_pheromone);
+    }
+
+    #[test]
+    fn uses_seeded_runs_deterministically() {
+        let tsp = create_simple_tsp();
+        let mut lhs =
+            RedBlackACS::new_with_seed(tsp.clone(), 1.0, 2.0, 0.1, 0.2, 0.9, 5, 100, 3, 17);
+        let mut rhs = RedBlackACS::new_with_seed(tsp, 1.0, 2.0, 0.1, 0.2, 0.9, 5, 100, 3, 17);
+
+        assert_eq!(lhs.seed(), 17);
+        assert_eq!(lhs.solve(), rhs.solve());
     }
 }

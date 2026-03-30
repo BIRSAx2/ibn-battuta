@@ -37,7 +37,32 @@ impl ACS2Opt {
         max_iterations: usize,
         candidate_list_size: usize,
     ) -> ACS2Opt {
-        let acs = AntColonySystem::with_options(
+        Self::with_options_and_seed(
+            tsp,
+            alpha,
+            beta,
+            rho,
+            q0,
+            num_ants,
+            max_iterations,
+            candidate_list_size,
+            rand::random(),
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn with_options_and_seed(
+        tsp: Tsp,
+        alpha: f64,
+        beta: f64,
+        rho: f64,
+        q0: f64,
+        num_ants: usize,
+        max_iterations: usize,
+        candidate_list_size: usize,
+        seed: u64,
+    ) -> ACS2Opt {
+        let acs = AntColonySystem::with_options_and_seed(
             tsp.clone(),
             alpha,
             beta,
@@ -46,6 +71,7 @@ impl ACS2Opt {
             num_ants,
             max_iterations,
             candidate_list_size,
+            seed,
         );
 
         ACS2Opt {
@@ -53,6 +79,10 @@ impl ACS2Opt {
             acs,
             last_solution: Solution::default(),
         }
+    }
+
+    pub fn seed(&self) -> u64 {
+        self.acs.seed()
     }
 }
 
@@ -192,5 +222,29 @@ mod tests {
 
         assert_eq!(solution.tour.len(), 3);
         assert!((solution.length - 17.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn uses_seeded_runs_deterministically() {
+        let data = "
+		NAME : simple
+		TYPE : TSP
+		DIMENSION : 4
+		EDGE_WEIGHT_TYPE: EUC_2D
+		NODE_COORD_SECTION
+		  1 0.0 0.0
+		  2 0.0 1.0
+		  3 1.0 1.0
+		  4 1.0 0.0
+		EOF
+		";
+
+        let tsp = TspBuilder::parse_str(data).unwrap();
+        let mut lhs =
+            ACS2Opt::with_options_and_seed(tsp.clone(), 0.1, 2.0, 0.1, 0.9, 10, 200, 15, 19);
+        let mut rhs = ACS2Opt::with_options_and_seed(tsp, 0.1, 2.0, 0.1, 0.9, 10, 200, 15, 19);
+
+        assert_eq!(lhs.seed(), 19);
+        assert_eq!(lhs.solve(), rhs.solve());
     }
 }

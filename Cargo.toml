@@ -15,11 +15,12 @@ readme = "README.md"
 
 [dependencies]
 getset = "0.1.2"
-approx = "0.5.1"
 rand = "0.8.5"
-log = "0.4.20"
-rayon = "1.10.0"
-clap = { version = "4.0", features = ["derive"] }
 
 [dev-dependencies]
-approx = "0.5.0"
+approx = "0.5.1"
+rayon = "1.10.0"
+
+[[bench]]
+name = "benchmarks"
+harness = false
