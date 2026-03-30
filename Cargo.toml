@@ -1,9 +1,9 @@
 [package]
 name = "ibn_battuta"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2021"
 include = ["/src", "/benches", "/data"]
-license = "MIT OR Apache-2.0"
+license = "MIT"
 description = "A Rust Library for Solving the Travelling Salesman Problem (TSP)"
 keywords = ["tsp", "travelling-salesman", "heuristics", "metaheuristics", "tsplib"]
 categories = ["algorithms"]
