@@ -347,7 +347,7 @@ impl RedBlackACS {
         let deposit_red = 1.0 / self.best_cost_red;
         let deposit_black = 1.0 / self.best_cost_black;
 
-        // Update pheromones for the best two ants in each group
+        // Update pheromones for the best tours in each group.
         for i in 0..self.best_tour_red.len() {
             let from = self.best_tour_red[i];
             let to = self.best_tour_red[(i + 1) % self.best_tour_red.len()];

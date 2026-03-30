@@ -12,11 +12,13 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 const BENCHMARK_BASE_SEED: u64 = 42;
+const DEFAULT_FOCUSED_RUNS: usize = 5;
 const DEFAULT_SMALL_RUNS: usize = 3;
 const DEFAULT_FULL_RUNS: usize = 10;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum BenchmarkProfile {
+    Focused,
     Small,
     Full,
 }
@@ -37,10 +39,12 @@ impl BenchmarkConfig {
             .map(str::trim)
         {
             Some("full") => BenchmarkProfile::Full,
+            Some("focused") => BenchmarkProfile::Focused,
             _ => BenchmarkProfile::Small,
         };
 
         let default_runs = match profile {
+            BenchmarkProfile::Focused => DEFAULT_FOCUSED_RUNS,
             BenchmarkProfile::Small => DEFAULT_SMALL_RUNS,
             BenchmarkProfile::Full => DEFAULT_FULL_RUNS,
         };
@@ -67,6 +71,61 @@ fn default_thread_count() -> usize {
     std::thread::available_parallelism()
         .map(usize::from)
         .unwrap_or(1)
+}
+
+fn env_f64_list(key: &str) -> Option<Vec<f64>> {
+    env::var(key).ok().and_then(|raw| {
+        let values = raw
+            .split(',')
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::parse::<f64>)
+            .collect::<Result<Vec<_>, _>>()
+            .ok()?;
+        (!values.is_empty()).then_some(values)
+    })
+}
+
+fn selected_solvers(defaults: &[(Solver, Vec<f64>)]) -> Vec<(Solver, Vec<f64>)> {
+    let Some(raw) = env::var("IBN_BATTUTA_BENCH_SOLVERS").ok() else {
+        return defaults.to_vec();
+    };
+
+    let selected: Vec<Solver> = raw
+        .split(',')
+        .map(str::trim)
+        .filter_map(parse_solver_name)
+        .collect();
+
+    if selected.is_empty() {
+        return defaults.to_vec();
+    }
+
+    defaults
+        .iter()
+        .filter(|(solver, _)| selected.contains(solver))
+        .cloned()
+        .collect()
+}
+
+fn parse_solver_name(name: &str) -> Option<Solver> {
+    match name.trim().to_ascii_lowercase().as_str() {
+        "nn" | "nearestneighbor" => Some(Solver::NearestNeighbor),
+        "2opt" | "twoopt" => Some(Solver::TwoOpt),
+        "sa" | "simulatedannealing" => Some(Solver::SimulatedAnnealing),
+        "sa2opt" => Some(Solver::SimulatedAnnealing2Opt),
+        "ga" | "geneticalgorithm" => Some(Solver::GeneticAlgorithm),
+        "ga2opt" => Some(Solver::GeneticAlgorithm2Opt),
+        "acs" | "antcolonysystem" => Some(Solver::AntColonySystem),
+        "acs2opt" => Some(Solver::AntColonySystem2Opt),
+        "rbacs" | "redblackacs" | "redblackantcolonysystem" => {
+            Some(Solver::RedBlackAntColonySystem)
+        }
+        "rbacs2opt" | "redblackantcolonysystem2opt" => Some(Solver::RedBlackAntColonySystem2Opt),
+        "as" | "antsystem" => Some(Solver::AntSystem),
+        "lk" | "linkernighan" => Some(Solver::LinKernighan),
+        _ => None,
+    }
 }
 
 fn instance_catalog() -> Vec<(&'static str, f64)> {
@@ -98,6 +157,7 @@ fn instance_catalog() -> Vec<(&'static str, f64)> {
 
 fn instances_for_profile(profile: BenchmarkProfile) -> Vec<TspInstance> {
     let names = match profile {
+        BenchmarkProfile::Focused => vec![("lin105", 14379.0)],
         BenchmarkProfile::Small => vec![("eil51", 426.0), ("berlin52", 7542.0), ("st70", 675.0)],
         BenchmarkProfile::Full => instance_catalog(),
     };
@@ -306,7 +366,7 @@ fn build_solver<'a>(
             let q0 = params[3];
             let max_iterations = params[4] as usize;
             let candidate_list_size = params[5] as usize;
-            let num_ants = 10;
+            let num_ants = env_usize("IBN_BATTUTA_ACS_NUM_ANTS").unwrap_or(10);
             Box::new(AntColonySystem::with_options_and_seed(
                 tsp,
                 alpha,
@@ -326,7 +386,7 @@ fn build_solver<'a>(
             let q0 = params[3];
             let max_iterations = params[4] as usize;
             let candidate_list_size = params[5] as usize;
-            let num_ants = 10;
+            let num_ants = env_usize("IBN_BATTUTA_ACS_NUM_ANTS").unwrap_or(10);
             Box::new(ACS2Opt::with_options_and_seed(
                 tsp,
                 alpha,
@@ -346,7 +406,7 @@ fn build_solver<'a>(
             let rho_red = params[2];
             let rho_black = params[3];
             let q0 = params[4];
-            let num_ants = 10;
+            let num_ants = env_usize("IBN_BATTUTA_RBACS_NUM_ANTS").unwrap_or(10);
             let max_iterations = params[5] as usize;
             let candidate_list_size = params[6] as usize;
 
@@ -370,7 +430,7 @@ fn build_solver<'a>(
             let rho_red = params[2];
             let rho_black = params[3];
             let q0 = params[4];
-            let num_ants = 10;
+            let num_ants = env_usize("IBN_BATTUTA_RBACS_NUM_ANTS").unwrap_or(10);
             let max_iterations = params[5] as usize;
             let candidate_list_size = params[6] as usize;
 
@@ -498,33 +558,63 @@ fn save_results_to_csv(results: &[BenchmarkResult], filename: &str) {
 }
 
 fn main() {
-    let solvers = vec![
-        Solver::NearestNeighbor,
-        Solver::TwoOpt,
-        Solver::SimulatedAnnealing,
-        Solver::SimulatedAnnealing2Opt,
-        Solver::GeneticAlgorithm,
-        Solver::GeneticAlgorithm2Opt,
-        Solver::AntColonySystem,
-        Solver::AntColonySystem2Opt,
-        Solver::RedBlackAntColonySystem,
-        Solver::RedBlackAntColonySystem2Opt,
-        // Solver::AntSystem,
+    let mut solver_configs = vec![
+        (Solver::NearestNeighbor, vec![]),
+        (Solver::TwoOpt, vec![]),
+        (
+            Solver::SimulatedAnnealing,
+            vec![1000.0, 0.999, 0.0001, 1000.0, 100.0],
+        ),
+        (
+            Solver::SimulatedAnnealing2Opt,
+            vec![1000.0, 0.999, 0.0001, 1000.0, 100.0],
+        ),
+        (Solver::GeneticAlgorithm, vec![100.0, 5.0, 0.7, 0.01, 500.0]),
+        (
+            Solver::GeneticAlgorithm2Opt,
+            vec![100.0, 5.0, 0.7, 0.01, 500.0],
+        ),
+        (
+            Solver::AntColonySystem,
+            vec![0.1, 2.0, 0.1, 0.9, 1000.0, 15.0],
+        ),
+        (
+            Solver::AntColonySystem2Opt,
+            vec![0.1, 2.0, 0.1, 0.9, 1000.0, 15.0],
+        ),
+        (
+            Solver::RedBlackAntColonySystem,
+            vec![0.1, 2.0, 0.1, 0.2, 0.95, 1000.0, 20.0],
+        ),
+        (
+            Solver::RedBlackAntColonySystem2Opt,
+            vec![0.1, 2.0, 0.1, 0.2, 0.95, 1000.0, 20.0],
+        ),
+        // (Solver::AntSystem, vec![0.1, 2.0, 0.1, 15.0, 1000.0]),
     ];
+    if let Some(params) = env_f64_list("IBN_BATTUTA_ACS_PARAMS") {
+        for (solver, solver_params) in &mut solver_configs {
+            if matches!(
+                solver,
+                Solver::AntColonySystem | Solver::AntColonySystem2Opt
+            ) {
+                *solver_params = params.clone();
+            }
+        }
+    }
+    if let Some(params) = env_f64_list("IBN_BATTUTA_RBACS_PARAMS") {
+        for (solver, solver_params) in &mut solver_configs {
+            if matches!(
+                solver,
+                Solver::RedBlackAntColonySystem | Solver::RedBlackAntColonySystem2Opt
+            ) {
+                *solver_params = params.clone();
+            }
+        }
+    }
 
-    let params = vec![
-        vec![],                                      // NN
-        vec![],                                      // 2-OPT
-        vec![1000.0, 0.999, 0.0001, 1000.0, 100.0],  // SA
-        vec![1000.0, 0.999, 0.0001, 1000.0, 100.0],  // SA-2OPT
-        vec![100.0, 5.0, 0.7, 0.01, 500.0],          // GA
-        vec![100.0, 5.0, 0.7, 0.01, 500.0],          // GA-2OPT
-        vec![0.1, 2.0, 0.1, 0.9, 1000.0, 15.0],      // ACS
-        vec![0.1, 2.0, 0.1, 0.9, 1000.0, 15.0],      // ACS-2OPT
-        vec![0.1, 2.0, 0.1, 0.2, 0.9, 1000.0, 15.0], // RB-ACS
-        vec![0.1, 2.0, 0.1, 0.2, 0.9, 1000.0, 15.0], // RB-ACS-2OPT
-                                                     // vec![0.1, 2.0, 0.1, 15.0, 1000.0], // AS
-    ];
+    let solver_configs = selected_solvers(&solver_configs);
+    let (solvers, params): (Vec<_>, Vec<_>) = solver_configs.into_iter().unzip();
 
     let config = BenchmarkConfig::from_env();
     benchmark(&solvers, &params, &config);
