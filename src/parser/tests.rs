@@ -29,6 +29,26 @@ fn test_read_str() {
 }
 
 #[test]
+fn test_checked_node_access() {
+    let tsp = TspBuilder::parse_str(TEST_STR).unwrap();
+
+    let node = tsp.node(1).unwrap();
+    assert_eq!(node.id(), 1);
+    assert_eq!(node.pos().len(), 2);
+    assert!(tsp.node(99).is_none());
+}
+
+#[test]
+fn test_checked_weight_access() {
+    let tsp = TspBuilder::parse_str(TEST_STR).unwrap();
+
+    let weight = tsp.try_weight(0, 1).unwrap();
+    assert!(weight.is_finite());
+    assert!(weight > 0.0);
+    assert!(tsp.try_weight(0, 99).is_none());
+}
+
+#[test]
 fn test_read_str_missing_name() {
     let mut s = String::from("");
     for (idx, line) in TEST_STR.lines().enumerate() {
@@ -253,4 +273,119 @@ fn test_metric_fn() {
         xray2(&vec![360., 75., -55.], &vec![180., -45., 22.]),
         "Test xray2"
     );
+}
+
+#[test]
+fn test_read_str_truncated_node_coord_section() {
+    let s = "
+NAME: test
+TYPE: TSP
+DIMENSION: 3
+EDGE_WEIGHT_TYPE: GEO
+NODE_COORD_SECTION
+1 38.24 20.42
+2 39.57 26.15
+EOF
+";
+
+    let result = TspBuilder::parse_str(s);
+    assert!(result.is_err());
+    assert!(matches!(
+        result.unwrap_err(),
+        crate::ParseTspError::UnexpectedEof { .. }
+    ));
+}
+
+#[test]
+fn test_read_str_invalid_dimension_value() {
+    let s = "
+NAME: test
+TYPE: TSP
+DIMENSION: nope
+EDGE_WEIGHT_TYPE: GEO
+NODE_COORD_SECTION
+1 38.24 20.42
+2 39.57 26.15
+3 40.56 25.32
+EOF
+";
+
+    let result = TspBuilder::parse_str(s);
+    assert!(matches!(
+        result.unwrap_err(),
+        crate::ParseTspError::InvalidInput { key, .. } if key == "DIMENSION"
+    ));
+}
+
+#[test]
+fn test_read_str_unsupported_adj_list() {
+    let s = "
+NAME: test
+TYPE: HCP
+DIMENSION: 3
+EDGE_DATA_FORMAT: ADJ_LIST
+EDGE_DATA_SECTION
+1 2
+-1
+EOF
+";
+
+    let result = TspBuilder::parse_str(s);
+    assert!(matches!(
+        result.unwrap_err(),
+        crate::ParseTspError::UnsupportedFeature(feature) if feature == "ADJ_LIST"
+    ));
+}
+
+#[test]
+fn test_explicit_weight_checked_access() {
+    let tsp = TspBuilder::parse_str(prep_weight!(WeightFormat::FullMatrix.tsp_str(), "0 1 2 3 1 0 4 5 2 4 0 6 3 5 6 0")).unwrap();
+
+    assert_eq!(tsp.try_weight(0, 3), Some(3.0));
+    assert_eq!(tsp.try_weight(3, 0), Some(3.0));
+    assert_eq!(tsp.try_weight(4, 0), None);
+}
+
+#[test]
+fn test_explicit_weight_invalid_token() {
+    let result = TspBuilder::parse_str(prep_weight!(
+        WeightFormat::FullMatrix.tsp_str(),
+        "0 1 2 3 1 0 nope 5 2 4 0 6 3 5 6 0"
+    ));
+
+    assert!(matches!(
+        result.unwrap_err(),
+        crate::ParseTspError::InvalidInput { key, .. } if key == "EDGE_WEIGHT_SECTION"
+    ));
+}
+
+#[test]
+fn test_explicit_weight_too_many_values() {
+    let result = TspBuilder::parse_str(prep_weight!(
+        WeightFormat::FullMatrix.tsp_str(),
+        "0 1 2 3 1 0 4 5 2 4 0 6 3 5 6 0 99"
+    ));
+
+    assert!(matches!(
+        result.unwrap_err(),
+        crate::ParseTspError::InvalidInput { key, .. } if key == "EDGE_WEIGHT_SECTION"
+    ));
+}
+
+#[test]
+fn test_try_weight_returns_none_for_function_format() {
+    let tsp = TspBuilder::parse_str(
+        "
+NAME: test
+TYPE: TSP
+DIMENSION: 2
+EDGE_WEIGHT_TYPE: EXPLICIT
+EDGE_WEIGHT_FORMAT: FUNCTION
+EDGE_WEIGHT_SECTION
+EOF
+",
+    )
+    .unwrap();
+
+    assert_eq!(tsp.try_weight(0, 1), None);
 }

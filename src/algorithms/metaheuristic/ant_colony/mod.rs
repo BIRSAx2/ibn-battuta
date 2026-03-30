@@ -1,8 +1,8 @@
-pub mod ant_system;
-pub mod ant_colony_system;
-pub mod red_black_ant_colony_system;
 pub mod acs_two_opt;
+pub mod ant_colony_system;
+pub mod ant_system;
 pub mod rbacs_two_opt;
+pub mod red_black_ant_colony_system;
 
 pub use acs_two_opt::*;
 pub use ant_colony_system::*;

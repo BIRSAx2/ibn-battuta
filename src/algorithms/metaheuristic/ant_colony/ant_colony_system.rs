@@ -1,9 +1,13 @@
+use crate::algorithms::utils::should_parallelize;
 use crate::algorithms::{Solution, TspSolver};
 use crate::parser::Tsp;
 use crate::NearestNeighbor;
 use rand::prelude::*;
+use rand::rngs::StdRng;
+use rayon::prelude::*;
 use std::cmp::Ordering;
 use std::f64;
+use std::mem;
 
 // Represents the Ant Colony System (ACS) algorithm for solving the Traveling Salesman Problem (TSP).
 ///
@@ -12,10 +16,12 @@ use std::f64;
 /// # Example
 ///
 /// ```
-/// use ibn_battuta::{AntColonySystem, TspBuilder, TspSolver};
+/// use ibn_battuta::experimental::AntColonySystem;
+/// use ibn_battuta::{TspBuilder, TspSolver};
 ///
 /// let tsp = TspBuilder::parse_str("
 ///     NAME : example
+///     TYPE : TSP
 ///     DIMENSION : 5
 ///     EDGE_WEIGHT_TYPE: EUC_2D
 ///     NODE_COORD_SECTION
@@ -33,292 +39,379 @@ use std::f64;
 /// assert_eq!(solution.tour.len(), 5);
 /// ```
 pub struct AntColonySystem {
-	tsp: Tsp,
-	pheromones: Vec<Vec<f64>>,
-	heuristic: Vec<Vec<f64>>,
-	best_tour: Vec<usize>,
-	best_cost: f64,
-	candidate_lists: Vec<Vec<usize>>,
+    tsp: Tsp,
+    pheromones: Vec<Vec<f64>>,
+    pheromone_scores: Vec<Vec<f64>>,
+    heuristic_scores: Vec<Vec<f64>>,
+    best_tour: Vec<usize>,
+    best_cost: f64,
+    candidate_lists: Vec<Vec<usize>>,
 
-	// params
-	alpha: f64,
-	beta: f64,
-	rho: f64,
-	tau0: f64,
-	q0: f64,
-	num_ants: usize,
-	max_iterations: usize,
-	candidate_list_size: usize,
+    // params
+    alpha: f64,
+    beta: f64,
+    rho: f64,
+    tau0: f64,
+    q0: f64,
+    num_ants: usize,
+    max_iterations: usize,
+    candidate_list_size: usize,
+    rng: StdRng,
+    seed: u64,
 }
 
 impl AntColonySystem {
-	/// Creates a new AntColonySystem with the specified parameters.
-	///
-	/// # Arguments
-	///
-	/// * `tsp` - The TSP instance to solve
-	/// * `alpha` - Pheromone importance factor
-	/// * `beta` - Heuristic information importance factor
-	/// * `rho` - Pheromone evaporation rate
-	/// * `q0` - Exploitation vs exploration factor
-	/// * `num_ants` - Number of ants in the colony
-	/// * `max_iterations` - Maximum number of iterations
-	/// * `candidate_list_size` - Size of the candidate list for each city
-	///
-	/// # Example
-	///
-	/// ```
-	/// use ibn_battuta::{AntColonySystem, TspBuilder};
-	///
-	/// let tsp = TspBuilder::parse_str("
-	///     NAME : example
-	///     DIMENSION : 5
-	///     EDGE_WEIGHT_TYPE: EUC_2D
-	///     NODE_COORD_SECTION
-	///       1 1.2 3.4
-	///       2 5.6 7.8
-	///       3 3.4 5.6
-	///       4 9.0 1.2
-	///       5 6.0 2.2
-	///     EOF
-	/// ").unwrap();
-	///
-	/// let acs = AntColonySystem::with_options(tsp, 0.1, 2.0, 0.1, 0.9, 5, 100, 3);
-	/// ```
-	pub fn with_options(tsp: Tsp, alpha: f64, beta: f64, rho: f64, q0: f64, num_ants: usize, max_iterations: usize, candidate_list_size: usize) -> AntColonySystem {
-		let mut nn = NearestNeighbor::new(tsp.clone());
-		let base_tour = nn.solve().length;
-		let n = tsp.dim();
-		let tau0 = 1.0 / (n as f64 * base_tour);
+    /// Creates a new AntColonySystem with the specified parameters.
+    ///
+    /// # Arguments
+    ///
+    /// * `tsp` - The TSP instance to solve
+    /// * `alpha` - Pheromone importance factor
+    /// * `beta` - Heuristic information importance factor
+    /// * `rho` - Pheromone evaporation rate
+    /// * `q0` - Exploitation vs exploration factor
+    /// * `num_ants` - Number of ants in the colony
+    /// * `max_iterations` - Maximum number of iterations
+    /// * `candidate_list_size` - Size of the candidate list for each city
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use ibn_battuta::experimental::AntColonySystem;
+    /// use ibn_battuta::TspBuilder;
+    ///
+    /// let tsp = TspBuilder::parse_str("
+    ///     NAME : example
+    ///     TYPE : TSP
+    ///     DIMENSION : 5
+    ///     EDGE_WEIGHT_TYPE: EUC_2D
+    ///     NODE_COORD_SECTION
+    ///       1 1.2 3.4
+    ///       2 5.6 7.8
+    ///       3 3.4 5.6
+    ///       4 9.0 1.2
+    ///       5 6.0 2.2
+    ///     EOF
+    /// ").unwrap();
+    ///
+    /// let acs = AntColonySystem::with_options(tsp, 0.1, 2.0, 0.1, 0.9, 5, 100, 3);
+    /// ```
+    #[allow(clippy::too_many_arguments)]
+    pub fn with_options(
+        tsp: Tsp,
+        alpha: f64,
+        beta: f64,
+        rho: f64,
+        q0: f64,
+        num_ants: usize,
+        max_iterations: usize,
+        candidate_list_size: usize,
+    ) -> AntColonySystem {
+        Self::with_options_and_seed(
+            tsp,
+            alpha,
+            beta,
+            rho,
+            q0,
+            num_ants,
+            max_iterations,
+            candidate_list_size,
+            rand::random(),
+        )
+    }
 
-		let pheromones = vec![vec![tau0; n]; n];
-		let heuristic = vec![vec![0.0; n]; n];
+    #[allow(clippy::too_many_arguments)]
+    pub fn with_options_and_seed(
+        tsp: Tsp,
+        alpha: f64,
+        beta: f64,
+        rho: f64,
+        q0: f64,
+        num_ants: usize,
+        max_iterations: usize,
+        candidate_list_size: usize,
+        seed: u64,
+    ) -> AntColonySystem {
+        let mut nn = NearestNeighbor::new(tsp.clone());
+        let base_tour = nn.solve().length;
+        let n = tsp.dim();
+        let tau0 = 1.0 / (n as f64 * base_tour);
 
-		let mut acs = AntColonySystem {
-			tsp,
-			pheromones,
-			heuristic,
-			best_tour: vec![],
-			best_cost: f64::INFINITY,
-			candidate_lists: vec![],
+        let pheromones = vec![vec![tau0; n]; n];
+        let pheromone_scores = vec![vec![tau0.powf(alpha); n]; n];
+        let heuristic_scores = vec![vec![0.0; n]; n];
 
-			alpha,
-			beta,
-			rho,
-			tau0,
-			q0,
-			num_ants,
-			max_iterations,
-			candidate_list_size,
-		};
+        let mut acs = AntColonySystem {
+            tsp,
+            pheromones,
+            pheromone_scores,
+            heuristic_scores,
+            best_tour: vec![],
+            best_cost: f64::INFINITY,
+            candidate_lists: vec![],
 
-		acs.initialize_heuristic();
-		acs.initialize_candidate_lists();
-		acs
-	}
+            alpha,
+            beta,
+            rho,
+            tau0,
+            q0,
+            num_ants,
+            max_iterations,
+            candidate_list_size,
+            rng: StdRng::seed_from_u64(seed),
+            seed,
+        };
 
-	fn calculate_tour_cost(&self, tour: &Vec<usize>) -> f64 {
-		let mut total_cost = 0.0;
-		for i in 0..tour.len() {
-			let from = tour[i];
-			let to = tour[(i + 1) % tour.len()];
-			total_cost += self.cost(from, to);
-		}
-		total_cost
-	}
+        acs.initialize_heuristic();
+        acs.initialize_candidate_lists();
+        acs
+    }
 
-	fn initialize_heuristic(&mut self) {
-		for i in 0..self.tsp.dim() {
-			for j in 0..self.tsp.dim() {
-				if i != j {
-					self.heuristic[i][j] = 1.0 / self.tsp.weight(i, j);
-				}
-			}
-		}
-	}
+    pub fn seed(&self) -> u64 {
+        self.seed
+    }
 
-	fn initialize_candidate_lists(&mut self) {
-		let n = self.tsp.dim();
-		self.candidate_lists = vec![vec![]; n];
+    fn calculate_tour_cost(&self, tour: &[usize]) -> f64 {
+        let mut total_cost = 0.0;
+        for i in 0..tour.len() {
+            let from = tour[i];
+            let to = tour[(i + 1) % tour.len()];
+            total_cost += self.cost(from, to);
+        }
+        total_cost
+    }
 
-		for i in 0..n {
-			let mut candidates: Vec<(usize, f64)> = (0..n)
-				.filter(|&j| i != j)
-				.map(|j| (j, self.tsp.weight(i, j)))
-				.collect();
+    fn initialize_heuristic(&mut self) {
+        let n = self.tsp.dim();
+        if should_parallelize(n) {
+            self.heuristic_scores
+                .par_iter_mut()
+                .enumerate()
+                .for_each(|(i, row)| {
+                    for (j, score) in row.iter_mut().enumerate() {
+                        if i != j {
+                            *score = (1.0 / self.tsp.weight(i, j)).powf(self.beta);
+                        }
+                    }
+                });
+        } else {
+            for i in 0..n {
+                for j in 0..n {
+                    if i != j {
+                        self.heuristic_scores[i][j] = (1.0 / self.tsp.weight(i, j)).powf(self.beta);
+                    }
+                }
+            }
+        }
+    }
 
-			candidates.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(Ordering::Equal));
-			self.candidate_lists[i] = candidates.into_iter()
-												.take(self.candidate_list_size)
-												.map(|(j, _)| j)
-												.collect();
-		}
-	}
+    fn initialize_candidate_lists(&mut self) {
+        let n = self.tsp.dim();
+        let build_candidates = |i: usize| {
+            let mut candidates: Vec<(usize, f64)> = (0..n)
+                .filter(|&j| i != j)
+                .map(|j| (j, self.tsp.weight(i, j)))
+                .collect();
 
-	fn construct_solution(&mut self) -> Vec<usize> {
-		let mut rng = rand::thread_rng();
-		let mut tour = vec![0; self.tsp.dim()];
-		let mut visited = vec![false; self.tsp.dim()];
+            candidates.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(Ordering::Equal));
+            candidates
+                .into_iter()
+                .take(self.candidate_list_size)
+                .map(|(j, _)| j)
+                .collect::<Vec<_>>()
+        };
 
-		tour[0] = rng.gen_range(0..self.tsp.dim());
-		visited[tour[0]] = true;
+        self.candidate_lists = if should_parallelize(n) {
+            (0..n).into_par_iter().map(build_candidates).collect()
+        } else {
+            (0..n).map(build_candidates).collect()
+        };
+    }
 
-		for i in 1..self.tsp.dim() {
-			tour[i] = self.select_next_city(&tour[0..i], &visited, &mut rng);
-			visited[tour[i]] = true;
-			self.local_pheromone_update(&tour[i - 1..=i]);
-		}
+    fn construct_solution(&mut self) -> Vec<usize> {
+        let mut tour = vec![0; self.tsp.dim()];
+        let mut visited = vec![false; self.tsp.dim()];
 
-		// Close the tour
-		self.local_pheromone_update(&[tour[self.tsp.dim() - 1], tour[0]]);
+        tour[0] = self.rng.gen_range(0..self.tsp.dim());
+        visited[tour[0]] = true;
 
-		tour
-	}
+        for i in 1..self.tsp.dim() {
+            tour[i] = self.select_next_city(&tour[0..i], &visited);
+            visited[tour[i]] = true;
+            self.local_pheromone_update(&tour[i - 1..=i]);
+        }
 
-	fn select_next_city(&self, partial_tour: &[usize], visited: &[bool], rng: &mut ThreadRng) -> usize {
-		let current_city = partial_tour[partial_tour.len() - 1];
+        // Close the tour
+        self.local_pheromone_update(&[tour[self.tsp.dim() - 1], tour[0]]);
 
-		if rng.gen::<f64>() < self.q0 {
-			// Exploitation (choose best)
-			self.select_best_city(current_city, visited)
-		} else {
-			// Exploration (probabilistic choice)
-			self.select_probabilistic_city(current_city, visited, rng)
-		}
-	}
+        tour
+    }
 
-	fn select_best_city(&self, current_city: usize, visited: &[bool]) -> usize {
-		self.candidate_lists[current_city]
-			.iter()
-			.filter(|&&city| !visited[city])
-			.max_by(|&&a, &&b| {
-				let score_a = self.pheromones[current_city][a] * self.heuristic[current_city][a].powf(self.beta);
-				let score_b = self.pheromones[current_city][b] * self.heuristic[current_city][b].powf(self.beta);
-				score_a.partial_cmp(&score_b).unwrap()
-			})
-			.cloned()
-			.unwrap_or_else(|| {
-				// If all candidates are visited, choose the best among all unvisited cities
-				(0..self.tsp.dim())
-					.filter(|&city| !visited[city])
-					.max_by(|&a, &b| {
-						let score_a = self.pheromones[current_city][a] * self.heuristic[current_city][a].powf(self.beta);
-						let score_b = self.pheromones[current_city][b] * self.heuristic[current_city][b].powf(self.beta);
-						score_a.partial_cmp(&score_b).unwrap()
-					})
-					.unwrap()
-			})
-	}
+    fn select_next_city(&mut self, partial_tour: &[usize], visited: &[bool]) -> usize {
+        let current_city = partial_tour[partial_tour.len() - 1];
 
-	fn select_probabilistic_city(&self, current_city: usize, visited: &[bool], rng: &mut ThreadRng) -> usize {
-		let mut probabilities = vec![0.0; self.tsp.dim()];
-		let mut total = 0.0;
+        if self.rng.gen::<f64>() < self.q0 {
+            // Exploitation (choose best)
+            self.select_best_city(current_city, visited)
+        } else {
+            // Exploration (probabilistic choice)
+            self.select_probabilistic_city(current_city, visited)
+        }
+    }
 
-		for &city in &self.candidate_lists[current_city] {
-			if !visited[city] {
-				let probability = self.pheromones[current_city][city] * self.heuristic[current_city][city].powf(self.beta);
-				probabilities[city] = probability;
-				total += probability;
-			}
-		}
+    fn select_best_city(&self, current_city: usize, visited: &[bool]) -> usize {
+        self.candidate_lists[current_city]
+            .iter()
+            .filter(|&&city| !visited[city])
+            .max_by(|&&a, &&b| {
+                let score_a =
+                    self.pheromone_scores[current_city][a] * self.heuristic_scores[current_city][a];
+                let score_b =
+                    self.pheromone_scores[current_city][b] * self.heuristic_scores[current_city][b];
+                score_a.partial_cmp(&score_b).unwrap()
+            })
+            .cloned()
+            .unwrap_or_else(|| {
+                // If all candidates are visited, choose the best among all unvisited cities
+                (0..self.tsp.dim())
+                    .filter(|&city| !visited[city])
+                    .max_by(|&a, &b| {
+                        let score_a = self.pheromone_scores[current_city][a]
+                            * self.heuristic_scores[current_city][a];
+                        let score_b = self.pheromone_scores[current_city][b]
+                            * self.heuristic_scores[current_city][b];
+                        score_a.partial_cmp(&score_b).unwrap()
+                    })
+                    .unwrap()
+            })
+    }
 
-		if total == 0.0 {
-			// If all candidates are visited, consider all unvisited cities
-			for city in 0..self.tsp.dim() {
-				if !visited[city] {
-					let probability = self.pheromones[current_city][city] * self.heuristic[current_city][city].powf(self.beta);
-					probabilities[city] = probability;
-					total += probability;
-				}
-			}
-		}
+    fn select_probabilistic_city(&mut self, current_city: usize, visited: &[bool]) -> usize {
+        let mut total = 0.0;
 
-		let random_value = rng.gen::<f64>() * total;
-		let mut cumulative = 0.0;
+        for &city in &self.candidate_lists[current_city] {
+            if !visited[city] {
+                total += self.pheromone_scores[current_city][city]
+                    * self.heuristic_scores[current_city][city];
+            }
+        }
 
-		for (city, &probability) in probabilities.iter().enumerate() {
-			cumulative += probability;
-			if cumulative >= random_value {
-				return city;
-			}
-		}
+        if total == 0.0 {
+            // If all candidates are visited, consider all unvisited cities
+            for (city, &is_visited) in visited.iter().enumerate() {
+                if !is_visited {
+                    total += self.pheromone_scores[current_city][city]
+                        * self.heuristic_scores[current_city][city];
+                }
+            }
 
-		// Fallback in case of floating-point precision issues
-		visited.iter().position(|&v| !v).unwrap()
-	}
+            let mut random_value = self.rng.gen::<f64>() * total;
+            for (city, &is_visited) in visited.iter().enumerate() {
+                if !is_visited {
+                    random_value -= self.pheromone_scores[current_city][city]
+                        * self.heuristic_scores[current_city][city];
+                    if random_value <= 0.0 {
+                        return city;
+                    }
+                }
+            }
+        } else {
+            let mut random_value = self.rng.gen::<f64>() * total;
+            for &city in &self.candidate_lists[current_city] {
+                if !visited[city] {
+                    random_value -= self.pheromone_scores[current_city][city]
+                        * self.heuristic_scores[current_city][city];
+                    if random_value <= 0.0 {
+                        return city;
+                    }
+                }
+            }
+        }
 
-	fn local_pheromone_update(&mut self, edge: &[usize]) {
-		let (i, j) = (edge[0], edge[1]);
-		self.pheromones[i][j] = (1.0 - self.rho) * self.pheromones[i][j] + self.rho * self.tau0;
-		self.pheromones[j][i] = self.pheromones[i][j];
-	}
+        // Fallback in case of floating-point precision issues
+        visited.iter().position(|&v| !v).unwrap()
+    }
 
-	fn global_pheromone_update(&mut self) {
-		let deposit = 1.0 / self.best_cost;
+    fn local_pheromone_update(&mut self, edge: &[usize]) {
+        let (i, j) = (edge[0], edge[1]);
+        self.pheromones[i][j] = (1.0 - self.rho) * self.pheromones[i][j] + self.rho * self.tau0;
+        self.pheromones[j][i] = self.pheromones[i][j];
+        self.pheromone_scores[i][j] = self.pheromones[i][j].powf(self.alpha);
+        self.pheromone_scores[j][i] = self.pheromone_scores[i][j];
+    }
 
-		// Evaporation on all edges
-		for i in 0..self.tsp.dim() {
-			for j in 0..self.tsp.dim() {
-				self.pheromones[i][j] *= 1.0 - self.alpha;
-			}
-		}
+    fn global_pheromone_update(&mut self) {
+        let deposit = 1.0 / self.best_cost;
 
-		// Pheromone update only for the best tour
-		for i in 0..self.best_tour.len() {
-			let from = self.best_tour[i];
-			let to = self.best_tour[(i + 1) % self.best_tour.len()];
+        // Evaporation on all edges
+        for i in 0..self.tsp.dim() {
+            for j in 0..self.tsp.dim() {
+                self.pheromones[i][j] *= 1.0 - self.rho;
+            }
+        }
 
-			self.pheromones[from][to] += self.alpha * deposit;
-			self.pheromones[to][from] = self.pheromones[from][to];
-		}
-	}
+        // Pheromone update only for the best tour
+        for i in 0..self.best_tour.len() {
+            let from = self.best_tour[i];
+            let to = self.best_tour[(i + 1) % self.best_tour.len()];
 
-	fn update_best_solution(&mut self, tour: &Vec<usize>) {
-		let cost = self.calculate_tour_cost(tour);
-		if cost < self.best_cost {
-			self.best_tour = tour.clone();
-			self.best_cost = cost;
-		}
-	}
+            self.pheromones[from][to] += self.rho * deposit;
+            self.pheromones[to][from] = self.pheromones[from][to];
+        }
+
+        for i in 0..self.tsp.dim() {
+            for j in 0..self.tsp.dim() {
+                self.pheromone_scores[i][j] = self.pheromones[i][j].powf(self.alpha);
+            }
+        }
+    }
+
+    fn update_best_solution(&mut self, tour: &mut Vec<usize>) {
+        let cost = self.calculate_tour_cost(tour);
+        if cost < self.best_cost {
+            mem::swap(&mut self.best_tour, tour);
+            self.best_cost = cost;
+        }
+    }
 }
 
 impl TspSolver for AntColonySystem {
-	fn solve(&mut self) -> Solution {
-		for _ in 0..self.max_iterations {
-			for _ in 0..self.num_ants {
-				let solution = self.construct_solution();
-				self.update_best_solution(&solution);
-			}
-			self.global_pheromone_update();
-		}
+    fn solve(&mut self) -> Solution {
+        for _ in 0..self.max_iterations {
+            for _ in 0..self.num_ants {
+                let mut solution = self.construct_solution();
+                self.update_best_solution(&mut solution);
+            }
+            self.global_pheromone_update();
+        }
 
-		Solution {
-			tour: self.best_tour.clone(),
-			length: self.best_cost,
-		}
-	}
+        Solution {
+            tour: self.best_tour.clone(),
+            length: self.best_cost,
+        }
+    }
 
-	fn tour(&self) -> Vec<usize> {
-		self.best_tour.clone()
-	}
+    fn tour(&self) -> Vec<usize> {
+        self.best_tour.clone()
+    }
 
-	fn cost(&self, from: usize, to: usize) -> f64 {
-		self.tsp.weight(from, to)
-	}
+    fn cost(&self, from: usize, to: usize) -> f64 {
+        self.tsp.weight(from, to)
+    }
 
-	fn format_name(&self) -> String {
-		format!("ACS")
-	}
+    fn format_name(&self) -> String {
+        "ACS".to_string()
+    }
 }
 
 #[cfg(test)]
 mod tests {
-	use super::*;
-	use crate::TspBuilder;
+    use super::*;
+    use crate::TspBuilder;
 
-	#[test]
-	fn test_example() {
-		let data = "
+    #[test]
+    fn test_example() {
+        let data = "
         NAME : example
         COMMENT : this is
         COMMENT : a simple example
@@ -333,55 +426,55 @@ mod tests {
           5 6.0 2.2
         EOF
         ";
-		let tsp = TspBuilder::parse_str(data).unwrap();
-		let n = tsp.dim();
-		let mut solver = AntColonySystem::with_options(tsp, 0.1, 2.0, 0.1, 0.9, n, 1000, 3);
+        let tsp = TspBuilder::parse_str(data).unwrap();
+        let n = tsp.dim();
+        let mut solver = AntColonySystem::with_options(tsp, 0.1, 2.0, 0.1, 0.9, n, 1000, 3);
 
-		let solution = solver.solve();
+        let solution = solver.solve();
 
-		assert_eq!(solution.tour.len(), n);
-		assert!(solution.length > 0.0);
-	}
+        assert_eq!(solution.tour.len(), n);
+        assert!(solution.length > 0.0);
+    }
 
-	#[test]
-	fn test_gr17() {
-		let path = "data/tsplib/gr17.tsp";
-		let tsp = TspBuilder::parse_path(path).unwrap();
+    #[test]
+    fn test_gr17() {
+        let path = "data/tsplib/gr17.tsp";
+        let tsp = TspBuilder::parse_path(path).unwrap();
 
-		let n = tsp.dim();
-		let mut solver = AntColonySystem::with_options(tsp, 0.1, 2.0, 0.1, 0.9, n, 1000, 5);
-		let solution = solver.solve();
+        let n = tsp.dim();
+        let mut solver = AntColonySystem::with_options(tsp, 0.1, 2.0, 0.1, 0.9, n, 1000, 5);
+        let solution = solver.solve();
 
-		assert_eq!(solution.tour.len(), n);
-		assert!(solution.length > 0.0);
-	}
+        assert_eq!(solution.tour.len(), n);
+        assert!(solution.length > 0.0);
+    }
 
-	fn test_instance(tsp: Tsp) {
-		let size = tsp.dim();
-		let mut solver = AntColonySystem::with_options(tsp, 0.1, 2.0, 0.1, 0.9, 10, 1000, 15);
-		let solution = solver.solve();
+    fn test_instance(tsp: Tsp) {
+        let size = tsp.dim();
+        let mut solver = AntColonySystem::with_options(tsp, 0.1, 2.0, 0.1, 0.9, 10, 1000, 15);
+        let solution = solver.solve();
 
-		assert_eq!(solution.tour.len(), size);
-		assert!(solution.length > 0.0);
-	}
+        assert_eq!(solution.tour.len(), size);
+        assert!(solution.length > 0.0);
+    }
 
-	#[test]
-	fn test_st70() {
-		let path = "data/tsplib/st70.tsp";
-		let tsp = TspBuilder::parse_path(path).unwrap();
-		test_instance(tsp);
-	}
+    #[test]
+    fn test_st70() {
+        let path = "data/tsplib/st70.tsp";
+        let tsp = TspBuilder::parse_path(path).unwrap();
+        test_instance(tsp);
+    }
 
-	#[test]
-	fn test_berlin52() {
-		let path = "data/tsplib/berlin52.tsp";
-		let tsp = TspBuilder::parse_path(path).unwrap();
-		test_instance(tsp);
-	}
+    #[test]
+    fn test_berlin52() {
+        let path = "data/tsplib/berlin52.tsp";
+        let tsp = TspBuilder::parse_path(path).unwrap();
+        test_instance(tsp);
+    }
 
-	#[test]
-	fn test_pheromone_update() {
-		let data = "
+    #[test]
+    fn test_pheromone_update() {
+        let data = "
         NAME : example
         COMMENT : this is
         COMMENT : a simple example
@@ -396,13 +489,74 @@ mod tests {
           5 6.0 2.2
         EOF
         ";
-		let tsp = TspBuilder::parse_str(data).unwrap();
-		let mut solver = AntColonySystem::with_options(tsp, 0.1, 2.0, 0.1, 0.9, 5, 100, 3);
+        let tsp = TspBuilder::parse_str(data).unwrap();
+        let mut solver = AntColonySystem::with_options(tsp, 0.1, 2.0, 0.1, 0.9, 5, 100, 3);
 
-		solver.best_tour = vec![0, 1, 2, 3, 4];
-		solver.best_cost = solver.calculate_tour_cost(&solver.best_tour);
-		let pheromone_before = solver.pheromones[0][1];
-		solver.global_pheromone_update();
-		assert!(solver.pheromones[0][1] != pheromone_before);
-	}
+        solver.best_tour = vec![0, 1, 2, 3, 4];
+        solver.best_cost = solver.calculate_tour_cost(&solver.best_tour);
+        let pheromone_before = solver.pheromones[0][1];
+        solver.global_pheromone_update();
+        assert!(solver.pheromones[0][1] != pheromone_before);
+    }
+
+    #[test]
+    fn test_global_update_refreshes_cached_scores() {
+        let data = "
+        NAME : example
+        TYPE : TSP
+        DIMENSION : 5
+        EDGE_WEIGHT_TYPE: EUC_2D
+        NODE_COORD_SECTION
+          1 1.2 3.4
+          2 5.6 7.8
+          3 3.4 5.6
+          4 9.0 1.2
+          5 6.0 2.2
+        EOF
+        ";
+        let tsp = TspBuilder::parse_str(data).unwrap();
+        let mut solver = AntColonySystem::with_options(tsp, 0.7, 2.0, 0.2, 0.9, 5, 100, 3);
+
+        solver.best_tour = vec![0, 1, 2, 3, 4];
+        solver.best_cost = solver.calculate_tour_cost(&solver.best_tour);
+        let edge = (0, 4);
+        let old_pheromone = solver.pheromones[edge.0][edge.1];
+        let old_score = solver.pheromone_scores[edge.0][edge.1];
+
+        solver.global_pheromone_update();
+
+        assert_ne!(solver.pheromones[edge.0][edge.1], old_pheromone);
+        assert_ne!(solver.pheromone_scores[edge.0][edge.1], old_score);
+        assert!(
+            (solver.pheromone_scores[edge.0][edge.1]
+                - solver.pheromones[edge.0][edge.1].powf(solver.alpha))
+            .abs()
+                < 1e-12
+        );
+    }
+
+    #[test]
+    fn uses_seeded_runs_deterministically() {
+        let data = "
+        NAME : example
+        TYPE : TSP
+        DIMENSION : 5
+        EDGE_WEIGHT_TYPE: EUC_2D
+        NODE_COORD_SECTION
+          1 1.2 3.4
+          2 5.6 7.8
+          3 3.4 5.6
+          4 9.0 1.2
+          5 6.0 2.2
+        EOF
+        ";
+        let tsp = TspBuilder::parse_str(data).unwrap();
+        let mut lhs =
+            AntColonySystem::with_options_and_seed(tsp.clone(), 0.1, 2.0, 0.1, 0.9, 5, 100, 3, 11);
+        let mut rhs =
+            AntColonySystem::with_options_and_seed(tsp, 0.1, 2.0, 0.1, 0.9, 5, 100, 3, 11);
+
+        assert_eq!(lhs.seed(), 11);
+        assert_eq!(lhs.solve(), rhs.solve());
+    }
 }

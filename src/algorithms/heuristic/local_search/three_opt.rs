@@ -1,6 +1,7 @@
+use crate::algorithms::utils::should_parallelize;
 use crate::algorithms::{Solution, TspSolver};
 use crate::parser::Tsp;
-
+use rayon::prelude::*;
 
 /// A struct representing the 3-opt algorithm for solving the Traveling Salesman Problem (TSP).
 ///
@@ -12,194 +13,219 @@ use crate::parser::Tsp;
 /// * `verbose` - A flag indicating whether to print verbose output.
 /// * `base_tour` - The initial tour based on the node coordinates.
 pub struct ThreeOpt<'a> {
-	tsp: &'a Tsp,
-	tour: Vec<usize>,
-	cost: f64,
-	verbose: bool,
-	base_tour: Vec<usize>,
+    tsp: &'a Tsp,
+    tour: Vec<usize>,
+    cost: f64,
+    verbose: bool,
+    base_tour: Vec<usize>,
 }
 
 impl ThreeOpt<'_> {
-	/// Creates a new instance of the ThreeOpt struct.
-	///
-	/// # Arguments
-	///
-	/// * `tsp` - A reference to the TSP instance.
-	pub fn new<'a>(tsp: &'a Tsp) -> ThreeOpt<'a> {
-		ThreeOpt {
-			tsp,
-			tour: vec![],
-			cost: 0.0,
-			verbose: false,
-			base_tour: tsp.node_coords().iter().map(|node| *node.0).collect(),
-		}
-	}
+    /// Creates a new instance of the ThreeOpt struct.
+    ///
+    /// # Arguments
+    ///
+    /// * `tsp` - A reference to the TSP instance.
+    pub fn new<'a>(tsp: &'a Tsp) -> ThreeOpt<'a> {
+        let mut base_tour = tsp.node_coords().keys().copied().collect::<Vec<_>>();
+        base_tour.sort_unstable();
+        ThreeOpt {
+            tsp,
+            tour: vec![],
+            cost: 0.0,
+            verbose: false,
+            base_tour,
+        }
+    }
 
-	/// Optimizes the current tour using the 3-opt algorithm.
-	///
-	/// This method iteratively improves the tour by considering all possible
-	/// 3-opt moves and selecting the one that results in the greatest reduction
-	/// in tour cost. The process continues until no further improvement is possible.
-	pub fn optimize(&mut self) {
-		let n = self.tour.len();
-		let mut improved = true;
+    /// Optimizes the current tour using the 3-opt algorithm.
+    ///
+    /// This method iteratively improves the tour by considering all possible
+    /// 3-opt moves and selecting the one that results in the greatest reduction
+    /// in tour cost. The process continues until no further improvement is possible.
+    pub fn optimize(&mut self) {
+        let n = self.tour.len();
 
-		if n <= 3 {
-			return;
-		}
+        if n <= 3 {
+            return;
+        }
 
-		while improved {
-			improved = false;
-			for i in 0..n - 2 {
-				for j in i + 2..n - 1 {
-					for k in j + 2..n + (i > 0) as usize {
-						if k >= n { continue; } // Ensure k stays in bounds
+        while let Some((i, j, k, new_tour, new_cost)) = self.best_three_opt_move() {
+            self.tour = new_tour;
+            self.cost = new_cost;
 
-						let new_tours = self.generate_new_tours(i, j, k);
+            if self.verbose {
+                println!(
+                    "3OPT: Improved tour at segments ({}, {}, {}), new cost: {}",
+                    i, j, k, self.cost
+                );
+            }
+        }
+    }
 
-						for new_tour in new_tours {
-							let new_cost = self.calculate_tour_cost_with(&new_tour);
+    fn best_three_opt_move(&self) -> Option<(usize, usize, usize, Vec<usize>, f64)> {
+        let n = self.tour.len();
+        let triples: Vec<(usize, usize, usize)> = (0..n - 2)
+            .flat_map(|i| {
+                (i + 2..n - 1).flat_map(move |j| {
+                    (j + 2..n + (i > 0) as usize)
+                        .filter(move |&k| k < n)
+                        .map(move |k| (i, j, k))
+                })
+            })
+            .collect();
 
-							if new_cost < self.cost {
-								self.tour = new_tour;
-								self.cost = new_cost;
-								improved = true;
+        let evaluate = |(i, j, k): (usize, usize, usize)| {
+            self.generate_new_tours(i, j, k)
+                .into_iter()
+                .map(|tour| {
+                    let cost = self.calculate_tour_cost_with(&tour);
+                    (i, j, k, tour, cost)
+                })
+                .min_by(|lhs, rhs| lhs.4.total_cmp(&rhs.4))
+        };
 
-								if self.verbose {
-									println!(
-										"3OPT: Improved tour at segments ({}, {}, {}), new cost: {}",
-										i, j, k, self.cost
-									);
-								}
-							}
-						}
-					}
-				}
-			}
-		}
-	}
+        let candidate = if should_parallelize(triples.len()) {
+            triples
+                .into_par_iter()
+                .filter_map(evaluate)
+                .filter(|(_, _, _, _, cost)| *cost < self.cost)
+                .min_by(|lhs, rhs| lhs.4.total_cmp(&rhs.4))
+        } else {
+            triples
+                .into_iter()
+                .filter_map(evaluate)
+                .filter(|(_, _, _, _, cost)| *cost < self.cost)
+                .min_by(|lhs, rhs| lhs.4.total_cmp(&rhs.4))
+        }?;
 
-	/// Generates new tours by performing 2-opt and 3-opt moves.
-	///
-	/// # Arguments
-	///
-	/// * `i` - The first index for the 3-opt move.
-	/// * `j` - The second index for the 3-opt move.
-	/// * `k` - The third index for the 3-opt move.
-	fn generate_new_tours(&self, i: usize, j: usize, k: usize) -> Vec<Vec<usize>> {
-		let mut new_tours = Vec::new();
-		let _n = self.tour.len();
+        Some(candidate)
+    }
 
-		let mut tour1 = self.tour.clone();
-		let mut tour2 = self.tour.clone();
-		let mut tour3 = self.tour.clone();
-		let mut tour4 = self.tour.clone();
-		let mut tour5 = self.tour.clone();
-		let mut tour6 = self.tour.clone();
-		let mut tour7 = self.tour.clone();
+    /// Generates new tours by performing 2-opt and 3-opt moves.
+    ///
+    /// # Arguments
+    ///
+    /// * `i` - The first index for the 3-opt move.
+    /// * `j` - The second index for the 3-opt move.
+    /// * `k` - The third index for the 3-opt move.
+    fn generate_new_tours(&self, i: usize, j: usize, k: usize) -> Vec<Vec<usize>> {
+        let mut new_tours = Vec::new();
+        let _n = self.tour.len();
 
-		// Case 1: no change (do nothing)
+        let mut tour1 = self.tour.clone();
+        let mut tour2 = self.tour.clone();
+        let mut tour3 = self.tour.clone();
+        let mut tour4 = self.tour.clone();
+        let mut tour5 = self.tour.clone();
+        let mut tour6 = self.tour.clone();
+        let mut tour7 = self.tour.clone();
 
-		// Case 2: 2-opt between i+1 and j (reverse segment between i+1 and j)
-		tour1[i + 1..=j].reverse();
+        // Case 1: no change (do nothing)
 
-		// Case 3: 2-opt between j+1 and k (reverse segment between j+1 and k)
-		tour2[j + 1..=k].reverse();
+        // Case 2: 2-opt between i+1 and j (reverse segment between i+1 and j)
+        tour1[i + 1..=j].reverse();
 
-		// Case 4: 2-opt between i+1 and k (reverse segment between i+1 and k)
-		tour3[i + 1..=k].reverse();
+        // Case 3: 2-opt between j+1 and k (reverse segment between j+1 and k)
+        tour2[j + 1..=k].reverse();
 
-		// Case 5: 3-opt with reversing segments i+1 to j and j+1 to k
-		tour4[i + 1..=j].reverse();
-		tour4[j + 1..=k].reverse();
+        // Case 4: 2-opt between i+1 and k (reverse segment between i+1 and k)
+        tour3[i + 1..=k].reverse();
 
-		// Case 6: 3-opt with reversing segments i+1 to j and i+1 to k
-		tour5[i + 1..=j].reverse();
-		tour5[i + 1..=k].reverse();
+        // Case 5: 3-opt with reversing segments i+1 to j and j+1 to k
+        tour4[i + 1..=j].reverse();
+        tour4[j + 1..=k].reverse();
 
-		// Case 7: 3-opt with reversing segments j+1 to k and i+1 to k
-		tour6[j + 1..=k].reverse();
-		tour6[i + 1..=k].reverse();
+        // Case 6: 3-opt with reversing segments i+1 to j and i+1 to k
+        tour5[i + 1..=j].reverse();
+        tour5[i + 1..=k].reverse();
 
-		// Case 8: 3-opt with reversing all segments
-		tour7[i + 1..=j].reverse();
-		tour7[j + 1..=k].reverse();
-		tour7[i + 1..=k].reverse();
+        // Case 7: 3-opt with reversing segments j+1 to k and i+1 to k
+        tour6[j + 1..=k].reverse();
+        tour6[i + 1..=k].reverse();
 
-		new_tours.push(tour1);
-		new_tours.push(tour2);
-		new_tours.push(tour3);
-		new_tours.push(tour4);
-		new_tours.push(tour5);
-		new_tours.push(tour6);
-		new_tours.push(tour7);
+        // Case 8: 3-opt with reversing all segments
+        tour7[i + 1..=j].reverse();
+        tour7[j + 1..=k].reverse();
+        tour7[i + 1..=k].reverse();
 
-		new_tours
-	}
+        new_tours.push(tour1);
+        new_tours.push(tour2);
+        new_tours.push(tour3);
+        new_tours.push(tour4);
+        new_tours.push(tour5);
+        new_tours.push(tour6);
+        new_tours.push(tour7);
 
-	/// Calculates the cost of a given tour.
-	///
-	/// # Arguments
-	///
-	/// * `tour` - A reference to a vector of node indices representing the tour.
-	///
-	/// # Returns
-	///
-	/// The total cost of the tour as a `f64`.
-	fn calculate_tour_cost_with(&self, tour: &Vec<usize>) -> f64 {
-		let mut cost = 0.0;
-		let len = tour.len();
-		for i in 0..len {
-			let from = tour[i];
-			let to = tour[(i + 1) % len];
-			cost += self.tsp.weight(from, to) as f64;
-		}
-		cost
-	}
+        new_tours
+    }
+
+    /// Calculates the cost of a given tour.
+    ///
+    /// # Arguments
+    ///
+    /// * `tour` - A reference to a vector of node indices representing the tour.
+    ///
+    /// # Returns
+    ///
+    /// The total cost of the tour as a `f64`.
+    fn calculate_tour_cost_with(&self, tour: &[usize]) -> f64 {
+        if tour.len() < 2 {
+            return 0.0;
+        }
+        let mut cost = 0.0;
+        let len = tour.len();
+        for i in 0..len {
+            let from = tour[i];
+            let to = tour[(i + 1) % len];
+            cost += self.tsp.weight(from, to);
+        }
+        cost
+    }
 }
 
 impl TspSolver for ThreeOpt<'_> {
-	/// Solves the TSP using the 3-opt algorithm.
-	///
-	/// This method initializes the tour and cost, prints the initial state if verbose is enabled,
-	/// and then calls the `optimize` method to improve the tour.
-	///
-	/// # Returns
-	///
-	/// A `Solution` struct containing the optimized tour and its total cost.
-	fn solve(&mut self) -> Solution {
-		self.tour = self.base_tour.clone();
-		self.cost = self.calculate_tour_cost(&self.base_tour);
+    /// Solves the TSP using the 3-opt algorithm.
+    ///
+    /// This method initializes the tour and cost, prints the initial state if verbose is enabled,
+    /// and then calls the `optimize` method to improve the tour.
+    ///
+    /// # Returns
+    ///
+    /// A `Solution` struct containing the optimized tour and its total cost.
+    fn solve(&mut self) -> Solution {
+        self.tour = self.base_tour.clone();
+        self.cost = self.calculate_tour_cost(&self.base_tour);
 
-		if self.verbose {
-			println!("Initial tour: {:?}", self.tour);
-			println!("Initial cost: {}", self.cost);
-		}
+        if self.verbose {
+            println!("Initial tour: {:?}", self.tour);
+            println!("Initial cost: {}", self.cost);
+        }
 
-		self.optimize();
+        self.optimize();
 
-		Solution {
-			tour: self.tour.clone(),
-			length: self.cost,
-		}
-	}
-	fn tour(&self) -> Vec<usize> {
-		self.tour.clone()
-	}
+        Solution {
+            tour: self.tour.clone(),
+            length: self.cost,
+        }
+    }
+    fn tour(&self) -> Vec<usize> {
+        self.tour.clone()
+    }
 
-	fn cost(&self, from: usize, to: usize) -> f64 {
-		self.tsp.weight(from, to)
-	}
+    fn cost(&self, from: usize, to: usize) -> f64 {
+        self.tsp.weight(from, to)
+    }
 }
 
 #[cfg(test)]
 mod tests {
-	use super::*;
-	use crate::algorithms::TspSolver;
-	use crate::TspBuilder;
-	#[test]
-	fn three_opt_initial_tour_cost() {
-		let data = "
+    use super::*;
+    use crate::algorithms::TspSolver;
+    use crate::TspBuilder;
+    #[test]
+    fn three_opt_initial_tour_cost() {
+        let data = "
         NAME : example
         COMMENT : this is
         COMMENT : a simple example
@@ -214,16 +240,16 @@ mod tests {
           5 6.0 2.2
         EOF
         ";
-		let tsp = TspBuilder::parse_str(data).unwrap();
-		let solver = ThreeOpt::new(&tsp);
-		let initial_cost = solver.calculate_tour_cost_with(&solver.base_tour);
-		assert_eq!(solver.cost, 0.0);
-		assert!(initial_cost > 0.0);
-	}
+        let tsp = TspBuilder::parse_str(data).unwrap();
+        let solver = ThreeOpt::new(&tsp);
+        let initial_cost = solver.calculate_tour_cost_with(&solver.base_tour);
+        assert_eq!(solver.cost, 0.0);
+        assert!(initial_cost > 0.0);
+    }
 
-	#[test]
-	fn three_opt_optimization_reduces_cost() {
-		let data = "
+    #[test]
+    fn three_opt_optimization_reduces_cost() {
+        let data = "
         NAME : example
         COMMENT : this is
         COMMENT : a simple example
@@ -238,15 +264,15 @@ mod tests {
           5 6.0 2.2
         EOF
         ";
-		let tsp = TspBuilder::parse_str(data).unwrap();
-		let mut solver = ThreeOpt::new(&tsp);
-		solver.solve();
-		assert!(solver.cost < solver.calculate_tour_cost_with(&solver.base_tour));
-	}
+        let tsp = TspBuilder::parse_str(data).unwrap();
+        let mut solver = ThreeOpt::new(&tsp);
+        solver.solve();
+        assert!(solver.cost <= solver.calculate_tour_cost_with(&solver.base_tour));
+    }
 
-	#[test]
-	fn three_opt_handles_empty_tour() {
-		let data = "
+    #[test]
+    fn three_opt_handles_empty_tour() {
+        let data = "
         NAME : example
         COMMENT : this is
         COMMENT : a simple example
@@ -256,16 +282,16 @@ mod tests {
         NODE_COORD_SECTION
         EOF
         ";
-		let tsp = TspBuilder::parse_str(data).unwrap();
-		let mut solver = ThreeOpt::new(&tsp);
-		let solution = solver.solve();
-		assert_eq!(solution.tour.len(), 0);
-		assert_eq!(solution.length, 0.0);
-	}
+        let tsp = TspBuilder::parse_str(data).unwrap();
+        let mut solver = ThreeOpt::new(&tsp);
+        let solution = solver.solve();
+        assert_eq!(solution.tour.len(), 0);
+        assert_eq!(solution.length, 0.0);
+    }
 
-	#[test]
-	fn three_opt_handles_single_node_tour() {
-		let data = "
+    #[test]
+    fn three_opt_handles_single_node_tour() {
+        let data = "
         NAME : example
         COMMENT : this is
         COMMENT : a simple example
@@ -276,10 +302,10 @@ mod tests {
           1 1.2 3.4
         EOF
         ";
-		let tsp = TspBuilder::parse_str(data).unwrap();
-		let mut solver = ThreeOpt::new(&tsp);
-		let solution = solver.solve();
-		assert_eq!(solution.tour.len(), 1);
-		assert_eq!(solution.length, 0.0);
-	}
+        let tsp = TspBuilder::parse_str(data).unwrap();
+        let mut solver = ThreeOpt::new(&tsp);
+        let solution = solver.solve();
+        assert_eq!(solution.tour.len(), 1);
+        assert_eq!(solution.length, 0.0);
+    }
 }

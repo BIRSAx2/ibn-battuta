@@ -1,5 +1,7 @@
+use crate::algorithms::utils::should_parallelize;
 use crate::algorithms::{Solution, TspSolver};
 use crate::parser::Tsp;
+use rayon::prelude::*;
 
 /// A brute-force approach to solving the Traveling Salesman Problem (TSP).
 ///
@@ -36,7 +38,7 @@ use crate::parser::Tsp;
 /// let solution = solver.solve();
 ///
 /// assert_eq!(solution.tour.len(), 4);
-/// assert!((solution.length - 4.0).abs() < std::f64::EPSILON);
+/// assert!((solution.length - 4.0).abs() < f64::EPSILON);
 /// ```
 pub struct BruteForce<'a> {
     tsp: &'a Tsp,
@@ -49,13 +51,32 @@ impl TspSolver for BruteForce<'_> {
     ///
     /// Returns the optimal solution, including the best tour and its cost.
     fn solve(&mut self) -> Solution {
-        let mut tour = vec![0];  // Start the tour from city 0
-        self.solve_recursive(&mut tour, 0.0);  // Recursively find the best tour
+        if self.tsp.dim() <= 1 {
+            self.best_tour = vec![0];
+            self.best_cost = 0.0;
+            return Solution::new(self.best_tour.clone(), self.best_cost);
+        }
 
-        Solution::new(
-            self.best_tour.iter().map(|&i| i as usize).collect(),
-            self.best_cost,
-        )
+        let starting_branches: Vec<usize> = (1..self.tsp.dim()).collect();
+        if should_parallelize(starting_branches.len()) {
+            if let Some((best_tour, best_cost)) = starting_branches
+                .into_par_iter()
+                .map(|next_city| {
+                    let mut tour = vec![0, next_city];
+                    self.solve_recursive_collect(&mut tour, self.tsp.weight(0, next_city))
+                })
+                .filter_map(|candidate| candidate)
+                .min_by(|lhs, rhs| lhs.1.total_cmp(&rhs.1))
+            {
+                self.best_tour = best_tour;
+                self.best_cost = best_cost;
+            }
+        } else {
+            let mut tour = vec![0];
+            self.solve_recursive(&mut tour, 0.0);
+        }
+
+        Solution::new(self.best_tour.clone(), self.best_cost)
     }
 
     /// Returns the best tour found after solving.
@@ -78,7 +99,7 @@ impl<'a> BruteForce<'a> {
         BruteForce {
             tsp,
             best_tour: vec![],
-            best_cost: f64::INFINITY,  // Initialize with infinity cost
+            best_cost: f64::INFINITY, // Initialize with infinity cost
         }
     }
 
@@ -87,34 +108,40 @@ impl<'a> BruteForce<'a> {
     /// # Arguments
     /// * `tour` - The current partial tour being explored.
     /// * `cost` - The current cost of the partial tour.
-    fn solve_recursive(&mut self, tour: &mut Vec<usize>, cost: f64) {
+    fn solve_recursive(&mut self, tour: &mut [usize], cost: f64) {
+        if let Some((best_tour, best_cost)) = self.solve_recursive_collect(tour, cost) {
+            self.best_tour = best_tour;
+            self.best_cost = best_cost;
+        }
+    }
+
+    fn solve_recursive_collect(&self, tour: &mut [usize], cost: f64) -> Option<(Vec<usize>, f64)> {
         if tour.len() == self.tsp.dim() {
-            // If we've visited all cities, complete the tour by returning to the starting city
             let last = tour.last().unwrap();
             let cost = cost + self.tsp.weight(*last, tour[0]);
-
-            // Update the best tour and cost if this tour is better
-            if cost < self.best_cost {
-                self.best_cost = cost;
-                self.best_tour = tour.clone();
-            }
+            Some((tour.to_vec(), cost))
         } else {
-            // Explore all cities that haven't been visited yet
+            let mut best: Option<(Vec<usize>, f64)> = None;
             for i in 0..self.tsp.dim() {
                 if !tour.contains(&i) {
-                    // Add the next city to the tour and calculate the new cost
-                    let mut new_tour = tour.clone();
+                    let mut new_tour = tour.to_vec();
                     new_tour.push(i);
                     let new_cost = cost + self.tsp.weight(*tour.last().unwrap(), i);
-
-                    // Recursively solve for the new tour
-                    self.solve_recursive(&mut new_tour, new_cost);
+                    if let Some(candidate) = self.solve_recursive_collect(&mut new_tour, new_cost) {
+                        if best
+                            .as_ref()
+                            .map(|(_, best_cost)| candidate.1 < *best_cost)
+                            .unwrap_or(true)
+                        {
+                            best = Some(candidate);
+                        }
+                    }
                 }
             }
+            best
         }
     }
 }
-
 
 #[cfg(test)]
 mod tests {
