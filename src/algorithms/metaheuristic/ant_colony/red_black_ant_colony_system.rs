@@ -118,8 +118,12 @@ impl RedBlackACS {
         let heuristic_scores = vec![vec![0.0; dim]; dim];
 
         // Calculate tau0 based on nearest neighbor heuristic
-        let nn_tour_length = NearestNeighbor::new(tsp.clone()).solve().length;
+        let nn_solution = NearestNeighbor::new(tsp.clone()).solve();
+        let nn_tour = nn_solution.tour;
+        let nn_tour_length = nn_solution.length;
         let tau0 = 1.0 / (dim as f64 * nn_tour_length);
+        let mut reverse_nn_tour = nn_tour.clone();
+        reverse_nn_tour.reverse();
 
         // Initialize pheromones inversely proportional to edge weights
         for i in 0..dim {
@@ -142,10 +146,10 @@ impl RedBlackACS {
             pheromone_scores_black,
             heuristic_scores,
             candidate_lists: vec![],
-            best_tour_red: vec![],
-            best_tour_black: vec![],
-            best_cost_red: f64::INFINITY,
-            best_cost_black: f64::INFINITY,
+            best_tour_red: nn_tour,
+            best_tour_black: reverse_nn_tour,
+            best_cost_red: nn_tour_length,
+            best_cost_black: nn_tour_length,
             alpha,
             beta,
             rho_red,
@@ -166,6 +170,13 @@ impl RedBlackACS {
 
     pub fn seed(&self) -> u64 {
         self.seed
+    }
+
+    pub fn best_group_tours(&self) -> [(Vec<usize>, f64); 2] {
+        [
+            (self.best_tour_red.clone(), self.best_cost_red),
+            (self.best_tour_black.clone(), self.best_cost_black),
+        ]
     }
 
     fn initialize_heuristic(&mut self) {
@@ -201,7 +212,6 @@ impl RedBlackACS {
         let mut tour = vec![0; self.tsp.dim()];
         let mut visited = vec![false; self.tsp.dim()];
 
-        // Randomly select starting city
         tour[0] = self.rng.gen_range(0..self.tsp.dim());
         visited[tour[0]] = true;
 
@@ -505,18 +515,24 @@ mod tests {
 
         let red_tour = vec![0, 1, 2, 3, 4];
         let black_tour = vec![0, 2, 4, 1, 3];
+        let initial_red_cost = solver.best_cost_red;
+        let initial_black_cost = solver.best_cost_black;
 
         solver.update_best_solution(&mut red_tour.clone(), true);
         solver.update_best_solution(&mut black_tour.clone(), false);
 
-        assert_eq!(solver.best_tour_red, red_tour);
-        assert_eq!(solver.best_tour_black, black_tour);
-
         let red_cost = solver.calculate_tour_cost(&red_tour);
         let black_cost = solver.calculate_tour_cost(&black_tour);
 
-        assert_eq!(solver.best_cost_red, red_cost);
-        assert_eq!(solver.best_cost_black, black_cost);
+        assert!(solver.best_cost_red <= initial_red_cost);
+        assert!(solver.best_cost_black <= initial_black_cost);
+        assert_eq!(solver.best_cost_red, solver.calculate_tour_cost(&solver.best_tour_red));
+        assert_eq!(
+            solver.best_cost_black,
+            solver.calculate_tour_cost(&solver.best_tour_black)
+        );
+        assert!(solver.best_cost_red <= red_cost);
+        assert!(solver.best_cost_black <= black_cost);
     }
 
     #[test]

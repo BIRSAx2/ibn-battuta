@@ -89,6 +89,79 @@ impl RBACS2Opt {
     pub fn seed(&self) -> u64 {
         self.rbacs.seed()
     }
+
+    fn optimize_tour(&self, base_tour: Vec<usize>) -> Solution {
+        let local_optimum = TwoOpt::from(self.tsp.clone(), base_tour, false).solve();
+        let perturbed = Self::double_bridge(&local_optimum.tour);
+        if perturbed == local_optimum.tour {
+            return local_optimum;
+        }
+
+        let iterated = TwoOpt::from(self.tsp.clone(), perturbed, false).solve();
+        if iterated.length < local_optimum.length {
+            iterated
+        } else {
+            local_optimum
+        }
+    }
+
+    fn double_bridge(tour: &[usize]) -> Vec<usize> {
+        let n = tour.len();
+        if n < 8 {
+            return tour.to_vec();
+        }
+
+        let q1 = n / 4;
+        let q2 = n / 2;
+        let q3 = (3 * n) / 4;
+
+        if q1 == 0 || q1 == q2 || q2 == q3 || q3 >= n {
+            return tour.to_vec();
+        }
+
+        let mut perturbed = Vec::with_capacity(n);
+        perturbed.extend_from_slice(&tour[..q1]);
+        perturbed.extend_from_slice(&tour[q3..]);
+        perturbed.extend_from_slice(&tour[q2..q3]);
+        perturbed.extend_from_slice(&tour[q1..q2]);
+        perturbed
+    }
+
+    fn order_crossover(parent_a: &[usize], parent_b: &[usize]) -> Vec<usize> {
+        let n = parent_a.len();
+        if n < 4 {
+            return parent_a.to_vec();
+        }
+
+        let start = n / 3;
+        let end = (2 * n) / 3;
+        let mut child = vec![usize::MAX; n];
+        let mut used = vec![false; n];
+
+        for idx in start..end {
+            child[idx] = parent_a[idx];
+            used[parent_a[idx]] = true;
+        }
+
+        let mut insert_idx = end % n;
+        for &city in parent_b
+            .iter()
+            .cycle()
+            .skip(end)
+            .take(n)
+        {
+            if used[city] {
+                continue;
+            }
+            while child[insert_idx] != usize::MAX {
+                insert_idx = (insert_idx + 1) % n;
+            }
+            child[insert_idx] = city;
+            insert_idx = (insert_idx + 1) % n;
+        }
+
+        child
+    }
 }
 
 impl TspSolver for RBACS2Opt {
@@ -98,8 +171,22 @@ impl TspSolver for RBACS2Opt {
     ///
     /// A `Solution` struct containing the tour and its total cost.
     fn solve(&mut self) -> Solution {
-        let base_solution = self.rbacs.solve();
-        self.last_solution = TwoOpt::from(self.tsp.clone(), base_solution.tour, false).solve();
+        let _ = self.rbacs.solve();
+        let [red_group, black_group] = self.rbacs.best_group_tours();
+        let mut candidates = vec![
+            self.optimize_tour(red_group.0.clone()),
+            self.optimize_tour(black_group.0.clone()),
+        ];
+
+        let child_ab = Self::order_crossover(&red_group.0, &black_group.0);
+        let child_ba = Self::order_crossover(&black_group.0, &red_group.0);
+        candidates.push(self.optimize_tour(child_ab));
+        candidates.push(self.optimize_tour(child_ba));
+
+        self.last_solution = candidates
+            .into_iter()
+            .min_by(|lhs, rhs| lhs.length.total_cmp(&rhs.length))
+            .unwrap();
         self.last_solution.clone()
     }
 
@@ -183,6 +270,32 @@ mod tests {
 
         assert_eq!(solution.tour.len(), 1);
         assert!((solution.length - 0.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn double_bridge_preserves_tour_membership() {
+        let tour = vec![0, 1, 2, 3, 4, 5, 6, 7];
+        let perturbed = RBACS2Opt::double_bridge(&tour);
+
+        assert_eq!(perturbed.len(), tour.len());
+        let mut sorted_original = tour.clone();
+        let mut sorted_perturbed = perturbed.clone();
+        sorted_original.sort_unstable();
+        sorted_perturbed.sort_unstable();
+        assert_eq!(sorted_original, sorted_perturbed);
+        assert_ne!(perturbed, tour);
+    }
+
+    #[test]
+    fn order_crossover_preserves_tour_membership() {
+        let parent_a = vec![0, 1, 2, 3, 4, 5, 6, 7];
+        let parent_b = vec![4, 5, 6, 7, 0, 1, 2, 3];
+        let child = RBACS2Opt::order_crossover(&parent_a, &parent_b);
+
+        assert_eq!(child.len(), parent_a.len());
+        let mut sorted_child = child;
+        sorted_child.sort_unstable();
+        assert_eq!(sorted_child, vec![0, 1, 2, 3, 4, 5, 6, 7]);
     }
 
     #[test]

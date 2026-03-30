@@ -576,11 +576,11 @@ fn main() {
         ),
         (
             Solver::AntColonySystem,
-            vec![0.1, 2.0, 0.1, 0.9, 1000.0, 15.0],
+            vec![0.1, 2.0, 0.1, 0.95, 1000.0, 20.0],
         ),
         (
             Solver::AntColonySystem2Opt,
-            vec![0.1, 2.0, 0.1, 0.9, 1000.0, 15.0],
+            vec![0.1, 2.0, 0.1, 0.95, 1000.0, 20.0],
         ),
         (
             Solver::RedBlackAntColonySystem,
